@@ -161,26 +161,6 @@ CFG:ICA,ALT,VEL,DIR
 
 ---
 
-
-## Possibili sviluppi
-
-- compressione binaria del payload
-- ACK e ritrasmissione
-- CRC applicativo
-- logging CSV
-- esportazione JSON
-- gateway multi-hop
-- visualizzazione mappa web
-- integrazione con Tar1090
-
----
-
-## Licenza
-
-MIT
-
----
-
 ## Autore
 
 **Alessandro Iglina**
