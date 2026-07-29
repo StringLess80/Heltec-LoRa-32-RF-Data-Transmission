@@ -1,237 +1,174 @@
 #!/usr/bin/env python3
 
+import glob
 import os
+import select
+import shutil
 import sys
 import termios
-import glob
-import select
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from rich.console import Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
-def parse_sbs(msg):
-    """
-    Parser formato SBS/BaseStation di dump1090/readsb
-    """
+# =====================================================
+# CONFIGURATION
+# =====================================================
+TIMEOUT = 300  # Aumentato a 5 minuti per evitare che l'aereo sparisca a 60s
+FIELD_MAP = {
+    "ICA": ("ICAO", "icao"),
+    "CAL": ("CALLSIGN", "callsign"),
+    "ALT": ("ALTITUDE", "alt"),
+    "VEL": ("SPEED", "speed"),
+    "DIR": ("HEADING", "heading"),
+    "LAT": ("LATITUDE", "lat"),
+    "LON": ("LONGITUDE", "lon"),
+    "VER": ("VERT RATE", "vertical"),
+    "SQU": ("SQUAWK", "squawk"),
+    "GRO": ("GROUND", "ground"),
+    "TIP": ("MSG TYPE", "type"),
+}
 
-    fields = msg.split(',')
+aircraft = {}
+aircraft_order = []
+active_fields = [] 
 
-    # Se non è un messaggio valido SBS
-    if len(fields) < 22:
-        return msg
+def parse_lora(message):
+    global active_fields
+    if message.startswith("CFG:"):
+        active_fields = message.replace("CFG:", "").split(",")
+        return
 
-    # Accetta solo messaggi MSG
-    if fields[0] != "MSG":
-        return msg
+    parts = message.split()
+    temp_data = {}
+    for p in parts:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            temp_data[k] = v
 
-    msg_type = fields[1]
-    icao = fields[4]
+    icao = temp_data.get("ICA")
+    if not icao: return
 
-    result = []
+    if icao not in aircraft:
+        aircraft_order.append(icao)
+        aircraft[icao] = {f[1]: "-" for f in FIELD_MAP.values()}
+    
+    for k, v in temp_data.items():
+        if k in FIELD_MAP:
+            aircraft[icao][FIELD_MAP[k][1]] = v
+            if k not in active_fields: active_fields.append(k)
 
-    # ICAO
-    result.append(f"ICAO: {icao}")
+    aircraft[icao]["last"] = datetime.now()
 
-    # Tipo messaggio
-    types = {
-        "1": "Identificazione aereo",
-        "2": "Posizione superficie",
-        "3": "Posizione aria",
-        "4": "Velocita'",
-        "5": "Identificazione superficie",
-        "6": "Trilaterazione",
-        "7": "Status",
-        "8": "Heartbeat"
-    }
+def remove_old_aircraft():
+    now = datetime.now()
+    expired = [i for i, d in aircraft.items() if now - d["last"] > timedelta(seconds=TIMEOUT)]
+    for i in expired:
+        del aircraft[i]
+        if i in aircraft_order: aircraft_order.remove(i)
 
-    result.append(
-        f"Tipo: {types.get(msg_type, 'Sconosciuto')}"
+def format_age(seconds):
+    """Formatta i secondi in minuti e secondi (es: 1m 15s)"""
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    rem_seconds = seconds % 60
+    return f"{minutes}m {rem_seconds}s"
+
+def aircraft_box(icao, data):
+    total_seconds = int((datetime.now() - data["last"]).total_seconds())
+    
+    # Colore basato sull'età (verde < 15s, giallo < 60s, rosso oltre)
+    color = "green" if total_seconds < 15 else "yellow" if total_seconds < 60 else "red"
+    
+    text = Text()
+    text.append(f"✈ {icao}\n", style="bold cyan")
+    
+    display_list = [f for f in active_fields if f in FIELD_MAP and f != "ICA"]
+    
+    for f_code in display_list:
+        label = FIELD_MAP[f_code][0]
+        val_key = FIELD_MAP[f_code][1]
+        val = data.get(val_key, "-")
+        text.append(f"{label:<10}: {val}\n")
+    
+    text.append("\n") 
+    text.append(f"LAST  : {data['last'].strftime('%H:%M:%S')}\n", style="dim")
+    text.append(f"AGE   : {format_age(total_seconds)}", style=color)
+    
+    panel_height = len(display_list) + 6
+    
+    return Panel(
+        text, 
+        width=32, 
+        height=panel_height, 
+        border_style=color
     )
 
+def build_ui():
+    term_w = shutil.get_terminal_size().columns
+    columns = max(1, term_w // 34)
+    
+    header_content = f"✈ ADS-B LoRa MONITOR | TARGETS: {len(aircraft)}"
+    if active_fields:
+        header_content += f"\nCampi attivi: {', '.join(active_fields)}"
+    
+    header = Panel(Text(header_content, justify="center", style="bold green"), height=4)
+    grid = Table.grid(padding=(0, 1))
+    for _ in range(columns): grid.add_column(width=34)
 
-    # Messaggio posizione aria
-    if msg_type == "3":
+    cards = [aircraft_box(i, aircraft[i]) for i in aircraft_order if i in aircraft]
+    
+    if not cards:
+        grid.add_row(Panel("In attesa di dati LoRa...", border_style="yellow", expand=False))
+    else:
+        for i in range(0, len(cards), columns):
+            row = cards[i:i+columns]
+            while len(row) < columns: row.append("")
+            grid.add_row(*row)
+            
+    return Group(header, grid)
 
-        altitude = fields[11]
-        latitude = fields[14]
-        longitude = fields[15]
-
-        if altitude:
-            result.append(f"Quota: {altitude} ft")
-
-        if latitude and longitude:
-            result.append(
-                f"Posizione: {latitude}, {longitude}"
-            )
-
-
-    # Messaggio velocità
-    elif msg_type == "4":
-
-        speed = fields[12]
-        heading = fields[13]
-        vertical = fields[16]
-
-        if speed:
-            result.append(f"Velocita': {speed} kt")
-
-        if heading:
-            result.append(f"Direzione: {heading} deg")
-
-        if vertical:
-            result.append(
-                f"Variazione verticale: {vertical} ft/min"
-            )
-
-
-    return "\n".join(result)
-
-
-
-# -------------------------------------------------
-# Ricerca automatica porte seriali
-# -------------------------------------------------
-
-ports = sorted(
-    glob.glob('/dev/ttyACM*') +
-    glob.glob('/dev/ttyUSB*')
-)
-
-
-if not ports:
-    print("Nessuna porta seriale trovata")
-    sys.exit(1)
-
-
-
-print("Porte seriali disponibili:")
-
-for i, port in enumerate(ports):
-    print(f"  {i}: {port}")
-
-
-
-# Scelta porta
-
-while True:
-
+def main():
+    ports = sorted(glob.glob("/dev/ttyACM*") + glob.glob("/dev/ttyUSB*"))
+    if not ports: 
+        print("Errore: Nessuna Heltec trovata.")
+        sys.exit(1)
+        
+    for i, p in enumerate(ports): print(f"{i}: {p}")
     try:
+        choice = int(input("\nSeleziona porta Heltec: "))
+        port_name = ports[choice]
+    except (ValueError, IndexError):
+        print("Scelta non valida.")
+        sys.exit(1)
+    
+    fd = os.open(port_name, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    attrs = termios.tcgetattr(fd)
+    attrs[4] = termios.B115200
+    attrs[5] = termios.B115200
+    termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    
+    buffer = b""
+    with Live(build_ui(), refresh_per_second=4, screen=True) as live:
+        while True:
+            r, _, _ = select.select([fd], [], [], 0.1)
+            if fd in r:
+                new_data = os.read(fd, 2048)
+                buffer += new_data
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    msg = line.decode(errors="ignore").strip()
+                    if msg: parse_lora(msg)
+            
+            remove_old_aircraft()
+            live.update(build_ui())
 
-        choice = input(
-            "Seleziona il numero della porta: "
-        )
-
-        idx = int(choice)
-
-        if 0 <= idx < len(ports):
-            PORT = ports[idx]
-            break
-
-        else:
-            print("Indice non valido")
-
-
-    except ValueError:
-        print("Inserisci un numero valido")
-
-
-
-print(f"\nUtilizzo della porta: {PORT}")
-
-
-
-# -------------------------------------------------
-# Apertura seriale
-# -------------------------------------------------
-
-fd = os.open(
-    PORT,
-    os.O_RDWR |
-    os.O_NOCTTY |
-    os.O_NONBLOCK
-)
-
-
-
-# Configurazione seriale
-
-attrs = termios.tcgetattr(fd)
-
-attrs[4] = termios.B115200
-attrs[5] = termios.B115200
-
-termios.tcsetattr(
-    fd,
-    termios.TCSANOW,
-    attrs
-)
-
-
-
-print("Ricezione da", PORT)
-print("In attesa di messaggi SBS...\n")
-
-
-
-# Buffer seriale
-
-buf = b''
-
-
-
-# -------------------------------------------------
-# Loop principale
-# -------------------------------------------------
-
-while True:
-
-
-    # Aspetta dati sulla seriale
-    r, _, _ = select.select(
-        [fd],
-        [],
-        [],
-        1.0
-    )
-
-
-    if fd in r:
-
-
-        data = os.read(fd, 256)
-
-        buf += data
-
-
-
-        # Cerca righe complete
-
-        while b'\n' in buf:
-
-
-            line, buf = buf.split(
-                b'\n',
-                1
-            )
-
-
-            text = line.decode(
-                errors='ignore'
-            ).strip()
-
-
-
-            if text:
-
-                ts = datetime.now().strftime(
-                    '%H:%M:%S'
-                )
-
-
-                print("=" * 45)
-                print(f"[{ts}]")
-
-                print(
-                    parse_sbs(text)
-                )
-
-                print()
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProgramma terminato.")
