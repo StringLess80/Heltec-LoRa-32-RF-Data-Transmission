@@ -138,7 +138,6 @@ I target cambiano colore in base all'età del dato:
 - **Giallo** < 60 s
 - **Rosso** ≥ 60 s
 
-## Monitor singolo velivolo
 
 ![Monitor ADS-B LoRa](screenshots/03.png)
 
