@@ -1,55 +1,60 @@
 #!/usr/bin/env python3
 
-import os
-import sys
-import termios
 import glob
+import os
 import select
 import shutil
+import sys
+import termios
 
 from datetime import datetime, timedelta
 
+from rich.console import Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich.console import Group
 
 
 # =====================================================
-# DATABASE AEREI
+# CONFIGURATION
 # =====================================================
-
-aircraft = {}
-
-# ordine di comparsa degli aerei
-aircraft_order = []
 
 TIMEOUT = 60
 
 
+# =====================================================
+# AIRCRAFT DATABASE
+# =====================================================
+
+aircraft = {}
+
+# mantiene l'ordine di comparsa degli aerei
+aircraft_order = []
+
 
 # =====================================================
-# PARSER SBS dump1090/readsb
+# SBS PARSER dump1090/readsb
 # =====================================================
 
-def parse_sbs(msg):
+def parse_sbs(message):
+    """
+    Parse SBS/BaseStation messages received from
+    dump1090 or readsb.
+    """
 
-    fields = msg.split(',')
+    fields = message.split(",")
 
     if len(fields) < 22:
         return
 
-
     if fields[0] != "MSG":
         return
-
 
     icao = fields[4]
 
     if not icao:
         return
-
 
 
     # nuovo aereo
@@ -59,24 +64,19 @@ def parse_sbs(msg):
         aircraft_order.append(icao)
 
         aircraft[icao] = {
-
             "type": "",
             "alt": "",
             "speed": "",
             "heading": "",
             "lat": "",
             "lon": "",
-            "last": datetime.now()
-
+            "last": datetime.now(),
         }
-
 
 
     plane = aircraft[icao]
 
-
     msg_type = fields[1]
-
 
 
     # identificazione
@@ -84,9 +84,7 @@ def parse_sbs(msg):
     if msg_type == "1":
 
         if fields[10]:
-
             plane["type"] = fields[10].strip()
-
 
 
     # posizione
@@ -103,7 +101,6 @@ def parse_sbs(msg):
             plane["lon"] = fields[15]
 
 
-
     # velocità
 
     elif msg_type == "4":
@@ -115,16 +112,18 @@ def parse_sbs(msg):
             plane["heading"] = fields[13]
 
 
-
     plane["last"] = datetime.now()
 
 
 
 # =====================================================
-# RIMOZIONE AEREI PERSI
+# REMOVE LOST AIRCRAFT
 # =====================================================
 
 def remove_old_aircraft():
+    """
+    Remove aircraft not updated for TIMEOUT seconds.
+    """
 
     now = datetime.now()
 
@@ -134,25 +133,24 @@ def remove_old_aircraft():
     for icao, data in aircraft.items():
 
         if now - data["last"] > timedelta(seconds=TIMEOUT):
-
             expired.append(icao)
-
 
 
     for icao in expired:
 
         del aircraft[icao]
-
         aircraft_order.remove(icao)
 
 
 
 # =====================================================
-# CARD AEREO
+# AIRCRAFT CARD
 # =====================================================
 
 def aircraft_box(icao, data):
-
+    """
+    Create a terminal card for an aircraft.
+    """
 
     age = int(
         (datetime.now() - data["last"]).total_seconds()
@@ -164,7 +162,7 @@ def aircraft_box(icao, data):
 
     text.append(
         f"✈ {icao}\n",
-        style="bold cyan"
+        style="bold cyan",
     )
 
     text.append("\n")
@@ -186,7 +184,6 @@ def aircraft_box(icao, data):
         f"HEAD  : {data['heading'] or '-'}°\n"
     )
 
-
     text.append(
         f"LAT   : {data['lat'] or '-'}\n"
     )
@@ -195,9 +192,7 @@ def aircraft_box(icao, data):
         f"LON   : {data['lon'] or '-'}\n"
     )
 
-
     text.append("\n")
-
 
     text.append(
         f"LAST  : {data['last'].strftime('%H:%M:%S')}\n"
@@ -209,318 +204,249 @@ def aircraft_box(icao, data):
 
 
     return Panel(
-
         text,
-
         width=32,
-
         height=13,
-
-        border_style="cyan"
-
+        border_style="cyan",
     )
 
 
 
 # =====================================================
-# CREAZIONE UI
+# USER INTERFACE
 # =====================================================
 
 def build_ui():
-
+    """
+    Build dynamic terminal interface.
+    """
 
     terminal_width = shutil.get_terminal_size().columns
 
-
     card_width = 34
-
 
     columns = max(
         1,
-        terminal_width // card_width
+        terminal_width // card_width,
     )
-
 
 
     header = Panel(
-
         Text(
-            f"✈ ADS-B LoRa MONITOR   |   TARGETS: {len(aircraft)}",
+            f"✈ ADS-B LoRa MONITOR | TARGETS: {len(aircraft)}",
             justify="center",
-            style="bold green"
+            style="bold green",
         ),
-
-        height=3
-
+        height=3,
     )
-
 
 
     grid = Table.grid(
-        padding=(0,1)
+        padding=(0, 1),
     )
-
 
 
     for _ in range(columns):
 
         grid.add_column(
-            width=card_width
+            width=card_width,
         )
-
 
 
     cards = []
 
-
-    # mantiene ordine di comparsa
 
     for icao in aircraft_order:
 
         if icao in aircraft:
 
             cards.append(
-
                 aircraft_box(
                     icao,
-                    aircraft[icao]
+                    aircraft[icao],
                 )
-
             )
-
 
 
     if not cards:
 
         return Group(
-
             header,
-
             Panel(
                 "Waiting for ADS-B data...",
-                border_style="yellow"
-            )
-
+                border_style="yellow",
+            ),
         )
 
 
+    for index in range(0, len(cards), columns):
 
-    # costruzione righe
-
-    for i in range(0, len(cards), columns):
-
-        row = cards[i:i+columns]
+        row = cards[index:index + columns]
 
 
         while len(row) < columns:
-
             row.append("")
 
 
-
-        grid.add_row(
-            *row
-        )
-
+        grid.add_row(*row)
 
 
     return Group(
-
         header,
-
-        grid
-
+        grid,
     )
 
 
 
 # =====================================================
-# SCELTA PORTA SERIALE
+# SERIAL PORT SELECTION
 # =====================================================
 
-ports = sorted(
+def select_port():
+    """
+    Ask user to select Heltec serial port.
+    """
 
-    glob.glob('/dev/ttyACM*') +
-
-    glob.glob('/dev/ttyUSB*')
-
-)
-
-
-
-if not ports:
-
-    print(
-        "Nessuna porta seriale trovata"
-    )
-
-    sys.exit(1)
-
-
-
-print("Porte disponibili:")
-
-
-for i, port in enumerate(ports):
-
-    print(
-        f"{i}: {port}"
+    ports = sorted(
+        glob.glob("/dev/ttyACM*")
+        + glob.glob("/dev/ttyUSB*")
     )
 
 
-
-while True:
-
-    try:
-
-        idx = int(
-            input("\nSeleziona porta: ")
-        )
-
-        PORT = ports[idx]
-
-        break
-
-
-    except:
+    if not ports:
 
         print(
-            "Scelta non valida"
+            "Nessuna porta seriale trovata"
         )
 
+        sys.exit(1)
 
 
-print(
-    f"\nUso porta: {PORT}"
-)
+    print("Porte disponibili:")
 
 
+    for index, port in enumerate(ports):
 
-# =====================================================
-# CONFIGURAZIONE SERIAL
-# =====================================================
-
-fd = os.open(
-
-    PORT,
-
-    os.O_RDWR |
-
-    os.O_NOCTTY |
-
-    os.O_NONBLOCK
-
-)
-
-
-
-attrs = termios.tcgetattr(fd)
-
-
-attrs[4] = termios.B115200
-attrs[5] = termios.B115200
-
-
-termios.tcsetattr(
-
-    fd,
-
-    termios.TCSANOW,
-
-    attrs
-
-)
-
-
-
-print(
-    "Ricezione ADS-B..."
-)
-
-
-
-# =====================================================
-# LOOP PRINCIPALE
-# =====================================================
-
-buf = b''
-
-
-
-with Live(
-
-    build_ui(),
-
-    refresh_per_second=5
-
-) as live:
+        print(
+            f"{index}: {port}"
+        )
 
 
     while True:
 
+        try:
 
-        r, _, _ = select.select(
+            choice = int(
+                input("\nSeleziona porta: ")
+            )
 
-            [fd],
-
-            [],
-
-            [],
-
-            1
-
-        )
+            return ports[choice]
 
 
+        except (ValueError, IndexError):
 
-        if fd in r:
-
-
-            data = os.read(
-
-                fd,
-
-                1024
-
+            print(
+                "Scelta non valida"
             )
 
 
-            buf += data
+
+# =====================================================
+# MAIN
+# =====================================================
+
+def main():
+
+    port = select_port()
 
 
+    print(
+        f"\nUso porta: {port}"
+    )
 
-            while b'\n' in buf:
+
+    fd = os.open(
+        port,
+        os.O_RDWR |
+        os.O_NOCTTY |
+        os.O_NONBLOCK,
+    )
 
 
-                line, buf = buf.split(
+    attrs = termios.tcgetattr(fd)
 
-                    b'\n',
+    attrs[4] = termios.B115200
+    attrs[5] = termios.B115200
 
-                    1
+    termios.tcsetattr(
+        fd,
+        termios.TCSANOW,
+        attrs,
+    )
 
+
+    print(
+        "Ricezione ADS-B..."
+    )
+
+
+    buffer = b""
+
+
+    with Live(
+        build_ui(),
+        refresh_per_second=5,
+    ) as live:
+
+
+        while True:
+
+            readable, _, _ = select.select(
+                [fd],
+                [],
+                [],
+                1,
+            )
+
+
+            if fd in readable:
+
+                data = os.read(
+                    fd,
+                    1024,
                 )
 
-
-                msg = line.decode(
-
-                    errors="ignore"
-
-                ).strip()
+                buffer += data
 
 
+                while b"\n" in buffer:
 
-                if msg:
-
-                    parse_sbs(msg)
-
-
-
-        remove_old_aircraft()
+                    line, buffer = buffer.split(
+                        b"\n",
+                        1,
+                    )
 
 
+                    message = line.decode(
+                        errors="ignore",
+                    ).strip()
 
-        live.update(
 
-            build_ui()
+                    if message:
 
-        )
+                        parse_sbs(
+                            message
+                        )
+
+
+            remove_old_aircraft()
+
+
+            live.update(
+                build_ui()
+            )
+
+
+
+if __name__ == "__main__":
+    main()

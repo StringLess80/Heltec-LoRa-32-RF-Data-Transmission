@@ -1,0 +1,11 @@
+import socket
+import serial
+
+ser = serial.Serial("COM10", 115200)
+
+sock = socket.create_connection(("127.0.0.1", 30003))
+
+while True:
+    data = sock.recv(1024)
+    if data:
+        ser.write(data)
