@@ -139,7 +139,7 @@ I target cambiano colore in base all'età del dato:
 - **Rosso** ≥ 60 s
 
 
-![Monitor ADS-B LoRa](screenshots/03.png)
+
 
 ---
 
