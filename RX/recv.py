@@ -17,7 +17,7 @@ from rich.text import Text
 # =====================================================
 # CONFIGURATION
 # =====================================================
-TIMEOUT = 300  # Aumentato a 5 minuti per evitare che l'aereo sparisca a 60s
+TIMEOUT = 300
 FIELD_MAP = {
     "ICA": ("ICAO", "icao"),
     "CAL": ("CALLSIGN", "callsign"),
