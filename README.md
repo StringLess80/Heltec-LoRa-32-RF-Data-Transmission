@@ -105,8 +105,8 @@ pip install pyserial rich
 
 ### 1. Caricare i firmware ESP32
 
-- `TX/TX.ino` sulla scheda trasmettitore
-- `RX/RX.ino` sulla scheda ricevitore
+- `TX/heltec-tx.ino` sulla scheda trasmettitore
+- `RX/heltec-rx.ino` sulla scheda ricevitore
 
 ### 2. Avviare il monitor RX
 
@@ -140,17 +140,13 @@ I target cambiano colore in base all'età del dato:
 
 ## Monitor singolo velivolo
 
-![Monitor ADS-B LoRa](screenshots/'Screenshot From 2026-07-29 15-15-33.png')
+![Monitor ADS-B LoRa](screenshots/03.png)
 
 ---
 
 ## Frequenza LoRa
 
-Configurazione europea:
-
-```cpp
-#define BAND 868E6
-```
+Configurazione europea: 868 MHz
 
 ---
 
