@@ -181,12 +181,22 @@ Usata dal firmware basato su RadioLib:
 ### Protocollo binario compatto
 
 ### Struttura del frame
+| Campo | Byte | Descrizione |
+|------|------|-------------|
+| `SYNC` | 2 | Byte di sincronizzazione |
+| `SEQ` | 2 | Numero di sequenza del pacchetto |
+| `MASK` | 2 | Bitmask dei campi presenti |
+| `LEN` | 1 | Lunghezza del payload |
+| `PAYLOAD` | N | Dati serializzati |
+| `CRC16` | 2 | Controllo di integrità | 
 
-```
-+--------+--------+--------+------+---------+-------+ 
+#### Layout binario 
 
-| SYNC | SEQ | MASK | LEN | PAYLOAD | CRC16 | | 2 B | 2 B | 2 B | 1 B | N B | 2 B | 
-
+```text 
++--------+--------+--------+------+---------+-------+
+|  SYNC  |   SEQ  |  MASK  |  LEN | PAYLOAD | CRC16 |
++--------+--------+--------+------+---------+-------+
+|  2 B   |   2 B  |   2 B  |  1 B |   N B   |  2 B  | 
 +--------+--------+--------+------+---------+-------+
 ```
 
