@@ -198,7 +198,7 @@ Responsibilities:
 ## Real‑Time Dashboard
 
 <p align="center">
-  <img src="screenshots/v2.png" width="100%" alt="Terminal dashboard">
+  <img src="screenshots/v2-01.png" width="100%" alt="Terminal dashboard">
 </p>
 
 Features:
