@@ -16,13 +16,9 @@ I messaggi degli aeromobili decodificati da readsb (o dump1090) vengono acquisit
 Il sistema è ottimizzato per:
 
 * Efficienza di banda
-
 * Lunga portata
-
 * Bassa latenza
-
 * Basso utilizzo della CPU
-
 * Framing robusto e validazione dei pacchetti
 
 ### Flusso dei dati
@@ -34,7 +30,7 @@ Ricevitore RTL‑SDR
         ↓ 
 readsb (TCP 127.0.0.1:30003)
         ↓
-TX/transmit.py (parsing + serializzazione compatta)
+Versione (V1 o V2)/TX/transmit.py (parsing + serializzazione compatta)
         ↓ 
 Seriale USB (115200 bps)
         ↓
@@ -46,7 +42,7 @@ Heltec LoRa 32 V3 (RX)
         ↓
 Seriale USB (115200 bps)
         ↓
-RX/recv.py (decodifica + dashboard)
+Versione (V1 o V2)/RX/recv.py (decodifica + dashboard)
 ```
 
 ### Perché usare readsb invece di dump1090?
@@ -56,13 +52,9 @@ Sebbene il progetto funzioni anche con dump1090, è fortemente consigliato usare
 ### Vantaggi di readsb
 
 * Migliore gestione dei messaggi Mode‑S e ADS‑B
-
 * Decodifica più accurata
-
 * Migliori prestazioni con molti aeromobili
-
 * Output di rete più stabile
-
 * Sviluppo e manutenzione più attivi rispetto a dump1090
 
 In scenari reali con traffico intenso, readsb produce generalmente più messaggi validi e con minori perdite.
@@ -71,25 +63,24 @@ In scenari reali con traffico intenso, readsb produce generalmente più messaggi
 
 Avvia readsb con il seguente comando:
 
-```
+```bash
 sudo readsb \
   --device-type rtlsdr \
   --device 0 \
   --gain auto \
-  --lat 41.130000 \
-  --lon 13.022000 \
+  --lat <LAT_RICEVITORE> \
+  --lon <LON_RICEVITORE> \
   --net \
   --net-bind-address 127.0.0.1 \
-  --net-sbs-port 30003 \
+  --net-sbs-port 30003
 ```
 
 Sostituisci:
 
-* `LAT_RICEVITORE` con la latitudine del tuo ricevitore
+* `<LAT_RICEVITORE>` con la latitudine del tuo ricevitore (es. `41.130000`)
+* `<LON_RICEVITORE>` con la longitudine del tuo ricevitore (es. `13.022000`)
 
-* `LON_RICEVITORE` con la longitudine del tuo ricevitore
-
-Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:30003`, che è esattamente ciò che utilizza `TX/transmit.py`.
+Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:30003`, che è esattamente la porta utilizzata dallo script `transmit.py`.
 
 ### Utilizzo di un GPS
 
@@ -107,19 +98,15 @@ Esempio di messaggio:
 
 Dimensione tipica: 100–140 byte
 
-Con LoRa a SF7 / BW125 kHz / CR4:5 il throughput utile è di pochi kbit/s, quindi trasmettere il testo completo sarebbe molto inefficiente.
+Con LoRa a SF7 / BW125 kHz / CR4:5 il throughput utile è di pochi kbit/s, quindi trasmettere il testo completo sarebbe estremamente inefficiente.
 
 ### Strategia di compressione
 
 * Bitmask di presenza dei campi
-
 * Campi binari tipizzati (`struct.pack`)
-
-* Callsign a lunghezza fissa
-
-* Rimozione dei delimitatori CSV
-
-* Controllo CRC16
+* Codifica del Callsign a lunghezza fissa
+* Rimozione completa dei delimitatori CSV
+* Controllo d'integrità tramite CRC16
 
 ### Risultato tipico
 
@@ -134,22 +121,18 @@ Con LoRa a SF7 / BW125 kHz / CR4:5 il throughput utile è di pochi kbit/s, quind
 ### Trasmettitore e ricevitore
 
 * 2 × Heltec LoRa 32 V3
-
-* Collegamento USB‑C
+* Collegamento tramite cavo USB‑C
 
 ### Stazione ADS‑B
 
 * Raspberry Pi o PC Linux
-
-* Dongle RTL‑SDR
-
-* Antenna 1090 MHz
-
+* Dongle USB RTL‑SDR
+* Antenna omnidirezionale tarata a 1090 MHz
 * readsb (consigliato) o dump1090
 
 ### Configurazione LoRa
 
-Configurazione attuale del firmware:
+Configurazione predefinita nel firmware:
 
 | Parametro        | Valore    |
 | ---------------- | --------- |
@@ -169,178 +152,162 @@ Configurazione attuale del firmware:
 
 ### Mappatura pin Heltec V3
 
-Usata dal firmware basato su RadioLib:
+Utilizzata dal firmware basato sulla libreria RadioLib per il modulo LoRa SX1262 integrato:
 
-| Segnale | GPIO |
-| ------- | ---- |
-| CS      | 8    |
-| DIO1    | 14   |
-| RST     | 12   |
-| BUSY    | 13   |
+| Segnale | GPIO | Descrizione |
+| ------- | ---- | ----------- |
+| CS      | 8    | SPI Chip Select |
+| DIO1    | 14   | Interrupt Pin |
+| RST     | 12   | Reset Pin |
+| BUSY    | 13   | Busy Status Pin |
+| SCK     | 9    | SPI Clock |
+| MISO    | 11   | SPI MISO |
+| MOSI    | 10   | SPI MOSI |
 
 ### Protocollo binario compatto
 
 ### Struttura del frame
 | Campo | Byte | Descrizione |
 |------|------|-------------|
-| `SYNC` | 2 | Byte di sincronizzazione |
-| `SEQ` | 2 | Numero di sequenza del pacchetto |
-| `MASK` | 2 | Bitmask dei campi presenti |
+| `SYNC` | 2 | Byte di sincronizzazione (`0x55AA`) |
+| `SEQ` | 2 | Numero di sequenza progressivo del pacchetto |
+| `MASK` | 2 | Bitmask di presenza dei campi |
 | `LEN` | 1 | Lunghezza del payload |
 | `PAYLOAD` | N | Dati serializzati |
 | `CRC16` | 2 | Controllo di integrità | 
 
+### Mappa dei campi (MASK)
 
-### Mappa dei campi
+I dati vengono trasmessi in modo dinamico: solo i campi realmente popolati nel messaggio SBS originale vengono inseriti nel payload binario, attivando il relativo bit nella maschera.
 
-| Bit | Campo            | Tipo    |
-| --- | ---------------- | ------- |
-| 0   | ICAO             | uint32  |
-| 1   | Callsign         | 8s      |
-| 2   | Quota            | uint16  |
-| 3   | Velocità         | uint16  |
-| 4   | Rotta            | uint16  |
-| 5   | Latitudine       | float32 |
-| 6   | Longitudine      | float32 |
-| 7   | Rateo verticale  | int16   |
-| 8   | RSSI (opzionale) | int8    |
+| Bit | Campo | Formato | Tipo | Descrizione / Unità di misura |
+| :---: | --- | :---: | :---: | --- |
+| **0** | ICAO | `<I` | `uint32` | Identificativo univoco del transponder (Hex) |
+| **1** | Callsign | `8s` | `char[8]` | Identificativo del volo (8 caratteri ASCII) |
+| **2** | Quota (Altitude) | `<H` | `uint16` | Altitudine in piedi (ft) |
+| **3** | Velocità (Speed) | `<H` | `uint16` | Velocità al suolo in nodi (kt) |
+| **4** | Rotta (Heading) | `<H` | `uint16` | Prua/Rotta in gradi (0–359°) |
+| **5** | Latitudine | `<i` | `int32` | Coordinata geografica scalata (valore $\times 10^7$) |
+| **6** | Longitudine | `<i` | `int32` | Coordinata geografica scalata (valore $\times 10^7$) |
+| **7** | Rateo verticale | `<h` | `int16` | Vertical Speed in piedi al minuto (fpm) |
+| **8** | Squawk | `<H` | `uint16` | Codice transponder a 4 cifre ottali (es. `7700`) |
+| **9** | Ground | `<B` | `uint8` | Stato al suolo: `1` (GND), `0` (AIR) |
+| **10** | Type | `<B` | `uint8` | Categoria/tipo del velivolo |
 
-Vengono serializzati solo i campi realmente presenti nel messaggio SBS originale.
+*Nota: L'RSSI non è trasmesso nel payload ma viene opzionalmente calcolato e aggiunto a livello locale dalla scheda ricevente durante l'elaborazione del pacchetto.*
 
 ### Componenti software
+
+Il progetto è suddiviso in due versioni principali (`V1` e `V2`). Si consiglia di utilizzare la cartella **`V2`** che contiene le ottimizzazioni di performance più recenti e la gestione fluida dei pacchetti.
 
 ### `TX/transmit.py`
 
 Responsabilità:
-
-* Connessione a `127.0.0.1:30003`
-
-* Parsing dei messaggi SBS‑1
-
-* Selezione dei campi validi
-
-* Serializzazione binaria compatta
-
-* Calcolo CRC16
-
-* Invio dei frame alla scheda trasmittente
+* Connessione socket a `127.0.0.1:30003` (flusso readsb)
+* Parsing dei messaggi SBS-1 testuali
+* Selezione ed estrazione dei campi validi
+* Serializzazione binaria compatta tramite `struct.pack`
+* Calcolo del CRC16 di verifica
+* Invio dei frame tramite connessione seriale alla scheda Heltec TX
 
 ### `RX/recv.py`
 
 Responsabilità:
-
-* Sincronizzazione sul marker `0x55AA`
-
-* Validazione CRC16
-
-* Decodifica del payload binario
-
-* Mantenimento della tabella aeromobili
-
-* Rimozione degli aeromobili inattivi
-
-* Rendering della dashboard con Rich
+* Lettura non bloccante della seriale della scheda Heltec RX
+* Sincronizzazione sul marker di inizio frame `0x55AA`
+* Validazione del checksum CRC16
+* Decodifica del payload binario compatto
+* Mantenimento e aggiornamento in tempo reale del database interno degli aeromobili
+* Rimozione automatica dei velivoli non più attivi (timeout di 150 secondi)
+* Rendering grafico della dashboard nel terminale con aggiornamento reattivo (libreria Rich)
 
 ### Dashboard in tempo reale
 
-![Decoding raw data - ADS-B Flight Tracking - FlightAware Discussions](screenshots/Screenshot%20From%202026-08-02%2013-56-24.png)
+La dashboard è disegnata per adattarsi in tempo reale al vostro terminale, disponendo le informazioni in una comoda vista a griglia auto-impaginata.
 
-Dashboard del terminale con una scheda per ogni aeromobile
-
-Funzionalità:
-
-* Una scheda per ogni aeromobile
-
-* Layout automatico a griglia
-
-* Adattamento dinamico alla larghezza del terminale
-
-* Timer “last seen”
-
-* Refresh pulito e senza sfarfallii
+Funcionalità incluse:
+* Una scheda informativa compatta per ogni velivolo tracciato
+* Layout a griglia auto-adattivo alla larghezza della finestra
+* Timer "last seen" aggiornato costantemente
+* Gestione dello scorrimento verticale (tramite tasti Freccia o tasti `W`/`S`) per visualizzare decine di aerei contemporaneamente
+* Refresh intelligente ed estremamente reattivo per evitare sfarfallii dello schermo
 
 ### Installazione
 
 ### 1. Installare readsb
 
-Su Debian / Raspberry Pi OS:
+Su sistemi operativi Debian-based o Raspberry Pi OS:
 
-`sudo apt update sudo apt install readsb`
+```bash
+sudo apt update
+sudo apt install readsb
+```
 
-### 2. Clonare il repository
+### 2. Clonare la repository
 
-`git clone https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission.git cd Heltec-LoRa-32-RF-Data-Transmission`
+```bash
+git clone https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission.git
+cd Heltec-LoRa-32-RF-Data-Transmission
+```
 
 ### 3. Installare le dipendenze Python
 
-`pip install pyserial rich`
+Installare le librerie necessarie (si consiglia l'utilizzo di un ambiente virtuale `venv` se si lavora su distribuzioni Linux moderne):
+
+```bash
+pip install pyserial rich
+```
 
 ### 4. Flashare le schede Heltec
 
-Apri i file `.ino` con Arduino IDE e installa:
-
-* ESP32 board package
-
-* RadioLib
-
-Carica:
-
-* `TX/transmitter.ino` sulla scheda trasmittente
-
-* `RX/receiver.ino` sulla scheda ricevente
+1. Apri l'Arduino IDE e installa i pacchetti di supporto per schede **ESP32** (Heltec) e la libreria **RadioLib** dal Gestore Librerie.
+2. Collega le schede e carica i rispettivi firmware (l'esempio fa riferimento alla versione più recente `V2`):
+   * Carica `V2/TX/transmitter/transmitter.ino` sulla scheda Heltec trasmittente.
+   * Carica `V2/RX/receiver/receiver.ino` sulla scheda Heltec ricevente.
 
 ### Avvio del sistema
 
-### Prima il ricevitore
+### 1. Avviare il ricevitore (lato visualizzazione)
 
-`cd RX python3 recv.py`
+Spostati nella directory della versione scelta ed esegui lo script di ricezione:
 
-### Poi il trasmettitore
+```bash
+cd V2/RX
+python3 recv.py
+```
 
-`cd TX python3 transmit.py`
+### 2. Avviare il trasmettitore (lato RTL‑SDR)
+
+Apri un altro terminale sulla macchina connessa all'SDR e avvia lo script di trasmissione:
+
+```bash
+cd V2/TX
+python3 transmit.py
+```
 
 ### Prestazioni
 
-Valori indicativi con payload da 24 byte:
+Valori indicativi misurati sul campo con payload medi da 24 byte:
 
 | Metrica            | Valore tipico |
 | ------------------ | ------------- |
-| Airtime            | ~55 ms        |
-| Pacchetti/s        | ~18           |
+| Airtime del pacchetto | ~55 ms        |
+| Pacchetti al secondo | ~18 pkt/s     |
 | Throughput utile   | ~3–5 kbit/s   |
 | Latenza end‑to‑end | 100–300 ms    |
 
-Le prestazioni dipendono da:
-
-* numero di aeromobili;
-
-* configurazione LoRa;
-
-* ambiente RF;
-
-* latenza della seriale USB.
+Le prestazioni generali possono variare in base al rumore elettromagnetico circostante, alla vicinanza tra i nodi, alla potenza impostata e alla velocità di elaborazione della porta seriale USB.
 
 ### Limitazioni attuali
 
-### Nessuna consegna garantita
-
-Il collegamento LoRa funziona in modalità broadcast senza ACK.
-
-Possibili effetti:
-
-* perdita di pacchetti;
-
-* ricezione fuori ordine;
-
-* nessuna ritrasmissione.
+### Nessuna consegna garantita (Best Effort)
+Il collegamento radio LoRa funziona in modalità broadcast unidirezionale senza pacchetti di ACK (Acknowledge) o ritrasmissioni automatiche. Alcuni pacchetti potrebbero andare persi in caso di forte rumore radio.
 
 ### Disponibilità dei dati SBS
+Non tutti i messaggi emessi dai velivoli contengono contemporaneamente tutti i parametri. I dati sulla posizione (latitudine/longitudine), altitudine e velocità vengono trasmessi dal transponder in momenti separati e saranno gradualmente aggregati nel database locale del ricevitore.
 
-Non tutti i messaggi contengono tutti i campi. Posizione, quota e velocità possono arrivare in frame ADS‑B separati.
+### Duty cycle e Normative
+L'uso delle frequenze libere nella banda ISM 868 MHz deve rispettare rigorosamente le normative nazionali ed europee (ETSI) relative al tempo massimo di trasmissione consentito (Duty Cycle, tipicamente l'1% su questa banda).
 
-### Duty cycle
-
-L’utilizzo della banda ISM 868 MHz deve rispettare le normative ETSI applicabili al duty‑cycle.
-
-## Author:
-https://github.com/StringLess80
+## Autore
+Sviluppato da: [StringLess80](https://github.com/StringLess80)
