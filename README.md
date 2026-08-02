@@ -27,7 +27,8 @@ Il sistema è ottimizzato per:
 
 ### Flusso dei dati
 
-`Aeromobile (ADS‑B 1090 MHz) 
+```
+Aeromobile (ADS‑B 1090 MHz)
         ↓ 
 Ricevitore RTL‑SDR
         ↓ 
@@ -45,7 +46,8 @@ Heltec LoRa 32 V3 (RX)
         ↓
 Seriale USB (115200 bps)
         ↓
-RX/recv.py (decodifica + dashboard)`
+RX/recv.py (decodifica + dashboard)
+```
 
 ### Perché usare readsb invece di dump1090?
 
