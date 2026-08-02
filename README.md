@@ -190,15 +190,6 @@ Usata dal firmware basato su RadioLib:
 | `PAYLOAD` | N | Dati serializzati |
 | `CRC16` | 2 | Controllo di integrità | 
 
-#### Layout binario 
-
-```text 
-+--------+--------+--------+------+---------+-------+
-|  SYNC  |   SEQ  |  MASK  |  LEN | PAYLOAD | CRC16 |
-+--------+--------+--------+------+---------+-------+
-|  2 B   |   2 B  |   2 B  |  1 B |   N B   |  2 B  | 
-+--------+--------+--------+------+---------+-------+
-```
 
 ### Mappa dei campi
 
