@@ -1,15 +1,3 @@
-Ecco una versione completamente tradotta in italiano e aggiornata del README, con:
-
-* spiegazione del perché readsb è preferibile a dump1090;
-
-* istruzioni corrette per abilitare l’output SBS sulla porta 30003;
-
-* nota sull’uso di un GPS per ottenere automaticamente latitudine e longitudine del ricevitore;
-
-* testo più tecnico e scorrevole per GitHub.
-
-Puoi copiarlo direttamente nel tuo `README.md`.
-
 ### ADS‑B over LoRa — Heltec LoRa 32 V3
 
 ESP32 · Heltec V3LoRa · SX1262868 MHz · EUPython 3.10+
