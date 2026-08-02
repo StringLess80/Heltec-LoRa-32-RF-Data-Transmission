@@ -6,7 +6,6 @@
 ![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
 ![Band](https://img.shields.io/badge/868%20MHz-EU-orange)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 **Long‑range transmission of ADS‑B / Mode‑S aircraft data over LoRa using Heltec ESP32 boards**
 
@@ -356,6 +355,7 @@ Operation in the **868 MHz ISM band** must comply with applicable **ETSI duty‑
 
 GitHub: https://github.com/StringLess80
 
+<<<<<<< HEAD
 Repository: https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission
 
 ---
@@ -365,3 +365,6 @@ Repository: https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission
 **If you find this project interesting, consider leaving a ⭐ on GitHub**
 
 </div>
+=======
+Repository: https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission
+>>>>>>> a7e7920 (Update README.md)
