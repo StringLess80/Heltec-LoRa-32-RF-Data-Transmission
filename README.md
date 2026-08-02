@@ -29,12 +29,6 @@ The system is optimized for:
 
 ---
 
-## System Architecture
-
-<p align="center">
-  <img src="img/diagram.png" width="100%" alt="ADS-B over LoRa diagram">
-</p>
-
 ### Data flow
 
 ```text
