@@ -185,7 +185,7 @@ def build_aircraft_card(icao, data):
         title_align="left",
         border_style=border_color,
         padding=(1, 2), # Respiro interno alla scheda
-        width=42 # Larghezza fissa per impaginazione ordinata, ma altezza fluida
+        width=42 # Larghezza fissa
     )
 
 def build_ui():
@@ -203,7 +203,6 @@ def build_ui():
             border_style="dim"
         )
     else:
-        # Usa Columns per distribuire automaticamente le schede nello schermo
         main_content = Columns(cards, expand=False, equal=True)
 
     # Header in alto
@@ -253,7 +252,6 @@ def main():
 
     buffer = b""
 
-    # Refresh screen 4 times a second
     with Live(build_ui(), refresh_per_second=4, screen=True) as live:
         while True:
             raw = ser.read(1024)
