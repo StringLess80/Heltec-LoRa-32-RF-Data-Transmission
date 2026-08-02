@@ -1,315 +1,334 @@
-# ADS‑B over LoRa — Heltec LoRa 32 V3
+Ecco una versione completamente tradotta in italiano e aggiornata del README, con:
 
-<div align="center">
+* spiegazione del perché readsb è preferibile a dump1090;
 
-![Platform](https://img.shields.io/badge/ESP32-Heltec%20V3-blue)
-![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
-![Band](https://img.shields.io/badge/868%20MHz-EU-orange)
-![Python](https://img.shields.io/badge/Python-3.10+-yellow)
+* istruzioni corrette per abilitare l’output SBS sulla porta 30003;
 
-**Long‑range transmission of ADS‑B / Mode‑S aircraft data over LoRa using Heltec ESP32 boards**
+* nota sull’uso di un GPS per ottenere automaticamente latitudine e longitudine del ricevitore;
 
-</div>
+* testo più tecnico e scorrevole per GitHub.
 
----
+Puoi copiarlo direttamente nel tuo `README.md`.
 
-## Overview
+### ADS‑B over LoRa — Heltec LoRa 32 V3
 
-This project implements a complete **ADS‑B → LoRa → ADS‑B bridge** designed for long‑range, low‑bandwidth radio links.
+ESP32 · Heltec V3LoRa · SX1262868 MHz · EUPython 3.10+
 
-Aircraft messages decoded by **dump1090 / readsb** are collected from the **SBS‑1 / BaseStation TCP stream (port 30003)**, compressed into a compact binary protocol, transmitted through a **LoRa 868 MHz** link using two **Heltec LoRa 32 V3 (ESP32 + SX1262)** boards, and reconstructed on the receiving side for real‑time visualization.
+### Trasmissione a lunga distanza di dati ADS‑B / Mode‑S tramite LoRa con schede Heltec ESP32
 
-The system is optimized for:
+### Panoramica
 
-- **Bandwidth efficiency**
-- **Long‑range transmission**
-- **Low latency**
-- **Low CPU overhead**
-- **Robust packet framing and validation**
+Questo progetto implementa un bridge completo ADS‑B → LoRa → ADS‑B pensato per collegamenti radio a lunga distanza e bassa larghezza di banda.
 
----
+I messaggi degli aeromobili decodificati da readsb (o dump1090) vengono acquisiti dal flusso SBS‑1 / BaseStation TCP sulla porta 30003, compressi in un protocollo binario compatto, trasmessi tramite un collegamento LoRa 868 MHz usando due schede Heltec LoRa 32 V3 (ESP32 + SX1262) e ricostruiti sul lato ricevente per una visualizzazione in tempo reale.
 
-### Data flow
+Il sistema è ottimizzato per:
 
-```text
-Aircraft (1090 MHz ADS‑B)
-        ↓
-RTL‑SDR Receiver
-        ↓
-dump1090 / readsb
-(TCP 127.0.0.1:30003)
-        ↓
-TX/transmit.py
-(parse + compact serialization)
-        ↓
-USB Serial (115200 bps)
-        ↓
-Heltec LoRa 32 V3 (TX)
-        ↓
-LoRa 868 MHz
-        ↓
-Heltec LoRa 32 V3 (RX)
-        ↓
-USB Serial (115200 bps)
-        ↓
-RX/recv.py
-(decode + dashboard)
-```
+* Efficienza di banda
 
----
+* Lunga portata
 
-## Why compress ADS‑B data?
+* Bassa latenza
 
-The SBS‑1 format is ASCII and highly redundant.
+* Basso utilizzo della CPU
 
-Example message:
+* Framing robusto e validazione dei pacchetti
 
-```text
-MSG,3,111,11111,4CA123,111111,2026/08/02,10:15:21.123,2026/08/02,10:15:21.123,RYR8AB,37000,450,182,44.54,11.29,-64,0,0,0,0
-```
+### Flusso dei dati
 
-Typical size: **100–140 bytes**
+`Aeromobile (ADS‑B 1090 MHz) ↓ Ricevitore RTL‑SDR ↓ readsb (TCP 127.0.0.1:30003) ↓ TX/transmit.py (parsing + serializzazione compatta) ↓ Seriale USB (115200 bps) ↓ Heltec LoRa 32 V3 (TX) ↓ LoRa 868 MHz ↓ Heltec LoRa 32 V3 (RX) ↓ Seriale USB (115200 bps) ↓ RX/recv.py (decodifica + dashboard)`
 
-LoRa at **SF7 / BW125 kHz / CR4:5** provides only a few kbit/s of useful throughput, therefore transmitting raw SBS messages is inefficient.
+### Perché usare readsb invece di dump1090?
 
-### Compression strategy
+Sebbene il progetto funzioni anche con dump1090, è fortemente consigliato usare readsb.
 
-- Presence bitmask
-- Binary typed fields (`struct.pack`)
-- Fixed‑length callsign
-- Removal of CSV delimiters
-- CRC16 validation
+### Vantaggi di readsb
 
-### Typical result
+* Migliore gestione dei messaggi Mode‑S e ADS‑B
 
-| Format | Size |
-|---|---:|
-| Raw SBS‑1 | 90–140 B |
-| Compact binary | 18–40 B |
-| Reduction | **65–80%** |
+* Decodifica più accurata
 
----
+* Migliori prestazioni con molti aeromobili
 
-## Hardware
+* Output di rete più stabile
 
-### Transmitter and Receiver
+* Sviluppo e manutenzione più attivi rispetto a dump1090
 
-- 2 × **Heltec LoRa 32 V3**
-- USB‑C connection
+In scenari reali con traffico intenso, readsb produce generalmente più messaggi validi e con minori perdite.
 
-### ADS‑B Station
+### Configurare readsb per l’output SBS sulla porta 30003
 
-- Raspberry Pi or Linux PC
-- RTL‑SDR dongle
-- 1090 MHz antenna
-- dump1090 or readsb
+Avvia readsb con il seguente comando:
 
----
+`sudo readsb \ --device-type rtlsdr \ --device 0 \ --gain auto \ --lat LAT_RICEVITORE \ --lon LON_RICEVITORE \ --net \ --net-bind-address 127.0.0.1 \ --net-sbs-port 30003`
 
-## LoRa Configuration
+Sostituisci:
 
-Current firmware configuration:
+* `LAT_RICEVITORE` con la latitudine del tuo ricevitore
 
-| Parameter | Value |
-|---|---|
-| Frequency | 868.0 MHz |
-| Spreading Factor | 7 |
-| Bandwidth | 125 kHz |
-| Coding Rate | 4/5 |
-| TX Power | 14 dBm |
+* `LON_RICEVITORE` con la longitudine del tuo ricevitore
 
-### Trade‑off
+Esempio per Bologna:
 
-| Change | Effect |
-|---|---|
-| SF ↑ | More range, less throughput |
-| BW ↑ | More throughput, less sensitivity |
-| CR ↑ | More robustness, more airtime |
+`sudo readsb \ --device-type rtlsdr \ --device 0 \ --gain auto \ --lat 44.4733445 \ --lon 11.3803298 \ --net \ --net-bind-address 127.0.0.1 \ --net-sbs-port 30003`
 
----
+Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:30003`, che è esattamente ciò che utilizza `TX/transmit.py`.
 
-## Heltec V3 Pin Mapping
+### Utilizzo di un GPS
 
-Used by the RadioLib firmware:
+Le coordinate del ricevitore possono essere inserite manualmente nel comando precedente, ma è possibile anche utilizzare un modulo GPS collegato al Raspberry Pi o al PC Linux.
 
-| Signal | GPIO |
-|---|---:|
-| CS | 8 |
-| DIO1 | 14 |
-| RST | 12 |
-| BUSY | 13 |
+In quel caso le coordinate possono essere recuperate automaticamente (ad esempio tramite `gpsd`) e passate a readsb.
 
----
+Questo approccio è utile per:
 
-## Compact Binary Protocol
+* stazioni riceventi mobili;
 
-### Frame format
+* installazioni temporanee;
 
-```text
-+--------+--------+--------+------+---------+-------+
-| SYNC   | SEQ    | MASK   | LEN  | PAYLOAD | CRC16 |
-| 2 B    | 2 B    | 2 B    | 1 B  | N B     | 2 B   |
-+--------+--------+--------+------+---------+-------+
-```
+* test sul campo;
 
-### Field map
+* sistemi alimentati a batteria.
 
-| Bit | Field | Type |
-|---:|---|---|
-| 0 | ICAO | uint32 |
-| 1 | Callsign | 8s |
-| 2 | Altitude | uint16 |
-| 3 | Ground speed | uint16 |
-| 4 | Track | uint16 |
-| 5 | Latitude | float32 |
-| 6 | Longitude | float32 |
-| 7 | Vertical rate | int16 |
-| 8 | RSSI (optional) | int8 |
+### Perché comprimere i dati ADS‑B?
 
-Only fields present in the original SBS message are serialized.
+Il formato SBS‑1 è testuale (ASCII) e contiene molta ridondanza.
 
----
-## Software Components
+Esempio di messaggio:
 
-### TX/transmit.py
+`MSG,3,111,11111,4CA123,111111,2026/08/02,10:15:21.123,2026/08/02,10:15:21.123,RYR8AB,37000,450,182,44.54,11.29,-64,0,0,0,0`
 
-Responsibilities:
+Dimensione tipica: 100–140 byte
 
-- Connect to `127.0.0.1:30003`
-- Parse SBS‑1 messages
-- Select valid fields
-- Serialize compact binary packets
-- Compute CRC16
-- Send frames to the Heltec transmitter
+Con LoRa a SF7 / BW125 kHz / CR4:5 il throughput utile è di pochi kbit/s, quindi trasmettere il testo completo sarebbe molto inefficiente.
 
-### RX/recv.py
+### Strategia di compressione
 
-Responsibilities:
+* Bitmask di presenza dei campi
 
-- Synchronize on `0x55AA`
-- Validate CRC16
-- Decode binary payloads
-- Maintain aircraft state table
-- Remove stale aircraft
-- Render the Rich dashboard
+* Campi binari tipizzati (`struct.pack`)
 
----
+* Callsign a lunghezza fissa
 
-## Real‑Time Dashboard
+* Rimozione dei delimitatori CSV
 
-<p align="center">
-  <img src="screenshots/v2-01.png" width="100%" alt="Terminal dashboard">
-</p>
+* Controllo CRC16
 
-Features:
+### Risultato tipico
 
-- One card per aircraft
-- Automatic grid layout
-- Dynamic terminal width adaptation
-- Last‑seen timer
-- Clean refresh
+| Formato          | Dimensione |
+| ---------------- | ---------- |
+| SBS‑1 originale  | 90–140 B   |
+| Binario compatto | 18–40 B    |
+| Riduzione        | 65–80%     |
 
----
+### Hardware
 
-## Installation
+### Trasmettitore e ricevitore
 
-### 1. Install dump1090 or readsb
+* 2 × Heltec LoRa 32 V3
 
-### 2. Clone the repository
+* Collegamento USB‑C
 
-```bash
-git clone https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission.git
-cd Heltec-LoRa-32-RF-Data-Transmission
-```
+### Stazione ADS‑B
 
----
+* Raspberry Pi o PC Linux
 
-### 3. Install Python dependencies
+* Dongle RTL‑SDR
 
-```bash
-pip install pyserial rich
-```
+* Antenna 1090 MHz
 
----
+* readsb (consigliato) o dump1090
 
-### 4. Flash the Heltec boards
+### Configurazione LoRa
 
-Open the `.ino` files in **Arduino IDE** and install:
+Configurazione attuale del firmware:
 
-- ESP32 board package
-- RadioLib
+| Parametro        | Valore    |
+| ---------------- | --------- |
+| Frequenza        | 868.0 MHz |
+| Spreading Factor | 7         |
+| Banda            | 125 kHz   |
+| Coding Rate      | 4/5       |
+| Potenza TX       | 14 dBm    |
 
-Flash:
+### Compromessi
 
-- `TX/transmitter.ino` to the transmitter board
-- `RX/receiver.ino` to the receiver board
+| Modifica | Effetto                                 |
+| -------- | --------------------------------------- |
+| SF ↑     | Maggiore portata, minore throughput     |
+| BW ↑     | Maggiore throughput, minore sensibilità |
+| CR ↑     | Maggiore robustezza, maggiore airtime   |
 
----
+### Mappatura pin Heltec V3
 
-## Running the System
+Usata dal firmware basato su RadioLib:
 
-### Receiver first
+| Segnale | GPIO |
+| ------- | ---- |
+| CS      | 8    |
+| DIO1    | 14   |
+| RST     | 12   |
+| BUSY    | 13   |
 
-```bash
-cd RX
-python3 recv.py
-```
+### Protocollo binario compatto
 
-### Then transmitter
+### Struttura del frame
 
-```bash
-cd TX
-python3 transmit.py
-```
+`+--------+--------+--------+------+---------+-------+ | SYNC | SEQ | MASK | LEN | PAYLOAD | CRC16 | | 2 B | 2 B | 2 B | 1 B | N B | 2 B | +--------+--------+--------+------+---------+-------+`
 
----
+### Mappa dei campi
 
-## Performance
+| Bit | Campo            | Tipo    |
+| --- | ---------------- | ------- |
+| 0   | ICAO             | uint32  |
+| 1   | Callsign         | 8s      |
+| 2   | Quota            | uint16  |
+| 3   | Velocità         | uint16  |
+| 4   | Rotta            | uint16  |
+| 5   | Latitudine       | float32 |
+| 6   | Longitudine      | float32 |
+| 7   | Rateo verticale  | int16   |
+| 8   | RSSI (opzionale) | int8    |
 
-Approximate values for **24‑byte payloads**:
+Vengono serializzati solo i campi realmente presenti nel messaggio SBS originale.
 
-| Metric | Typical |
-|---|---:|
-| Airtime | ~55 ms |
-| Packets/s | ~18 |
-| Useful throughput | ~3–5 kbit/s |
-| End‑to‑end latency | 100–300 ms |
+### Componenti software
 
-Performance depends on:
+### `TX/transmit.py`
 
-- Number of aircraft
-- LoRa configuration
-- RF environment
-- USB serial latency
+Responsabilità:
 
----
+* Connessione a `127.0.0.1:30003`
 
-## Current Limitations
+* Parsing dei messaggi SBS‑1
 
-### No guaranteed delivery
+* Selezione dei campi validi
 
-The LoRa link is used in **broadcast mode without acknowledgements**.
+* Serializzazione binaria compatta
 
-Possible effects:
+* Calcolo CRC16
 
-- Packet loss
-- Out‑of‑order reception
-- No retransmission
+* Invio dei frame alla scheda trasmittente
 
-### SBS data availability
+### `RX/recv.py`
 
-Not every message contains all fields. Position, altitude and speed may arrive in separate ADS‑B frames.
+Responsabilità:
+
+* Sincronizzazione sul marker `0x55AA`
+
+* Validazione CRC16
+
+* Decodifica del payload binario
+
+* Mantenimento della tabella aeromobili
+
+* Rimozione degli aeromobili inattivi
+
+* Rendering della dashboard con Rich
+
+### Dashboard in tempo reale
+
+![Decoding raw data - ADS-B Flight Tracking - FlightAware Discussions](screenshots/Screenshot%20From%202026-08-02%2013-56-24.png)
+
+Dashboard del terminale con una scheda per ogni aeromobile
+
+Funzionalità:
+
+* Una scheda per ogni aeromobile
+
+* Layout automatico a griglia
+
+* Adattamento dinamico alla larghezza del terminale
+
+* Timer “last seen”
+
+* Refresh pulito e senza sfarfallii
+
+### Installazione
+
+### 1. Installare readsb
+
+Su Debian / Raspberry Pi OS:
+
+`sudo apt update sudo apt install readsb`
+
+### 2. Clonare il repository
+
+`git clone https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission.git cd Heltec-LoRa-32-RF-Data-Transmission`
+
+### 3. Installare le dipendenze Python
+
+`pip install pyserial rich`
+
+### 4. Flashare le schede Heltec
+
+Apri i file `.ino` con Arduino IDE e installa:
+
+* ESP32 board package
+
+* RadioLib
+
+Carica:
+
+* `TX/transmitter.ino` sulla scheda trasmittente
+
+* `RX/receiver.ino` sulla scheda ricevente
+
+### Avvio del sistema
+
+### Prima il ricevitore
+
+`cd RX python3 recv.py`
+
+### Poi il trasmettitore
+
+`cd TX python3 transmit.py`
+
+### Prestazioni
+
+Valori indicativi con payload da 24 byte:
+
+| Metrica            | Valore tipico |
+| ------------------ | ------------- |
+| Airtime            | ~55 ms        |
+| Pacchetti/s        | ~18           |
+| Throughput utile   | ~3–5 kbit/s   |
+| Latenza end‑to‑end | 100–300 ms    |
+
+Le prestazioni dipendono da:
+
+* numero di aeromobili;
+
+* configurazione LoRa;
+
+* ambiente RF;
+
+* latenza della seriale USB.
+
+### Limitazioni attuali
+
+### Nessuna consegna garantita
+
+Il collegamento LoRa funziona in modalità broadcast senza ACK.
+
+Possibili effetti:
+
+* perdita di pacchetti;
+
+* ricezione fuori ordine;
+
+* nessuna ritrasmissione.
+
+### Disponibilità dei dati SBS
+
+Non tutti i messaggi contengono tutti i campi. Posizione, quota e velocità possono arrivare in frame ADS‑B separati.
 
 ### Duty cycle
 
-Operation in the **868 MHz ISM band** must comply with applicable **ETSI duty‑cycle regulations**.
+L’utilizzo della banda ISM 868 MHz deve rispettare le normative ETSI applicabili al duty‑cycle.
 
----
-
-## Author
-
-**Alessandro Iglina**  
+## Author 
+**Alessandro Iglina** 
 
 GitHub: https://github.com/StringLess80
-
-Repository: https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission

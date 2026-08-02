@@ -27,7 +27,7 @@ else:
 # CONFIGURATION
 # =====================================================
 
-TIMEOUT = 150
+TIMEOUT = 60
 
 SYNC = b"\x55\xAA"
 HEADER_SIZE = 7
