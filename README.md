@@ -181,6 +181,16 @@ Configurazione predefinita nel firmware:
 | Coding Rate      | 4/5       |
 | Potenza TX       | 14 dBm    |
 
+
+### Compromessi
+
+| Modifica | Effetto                                 |
+| -------- | --------------------------------------- |
+| SF ↑     | Maggiore portata, minore throughput     |
+| BW ↑     | Maggiore throughput, minore sensibilità |
+| CR ↑     | Maggiore robustezza, maggiore airtime   |
+
+
 ### Mappatura pin Heltec V3
 
 La configurazione dei pin include sia il modulo LoRa SX1262, sia la gestione dell'OLED e dei controlli hardware:
@@ -256,6 +266,18 @@ Responsabilità:
 * Rimozione automatica dei velivoli non più attivi (timeout di 150 secondi)
 * Rendering grafico della dashboard nel terminale con aggiornamento reattivo (libreria Rich)
 
+
+### Dashboard in tempo reale
+
+La dashboard è disegnata per adattarsi in tempo reale al vostro terminale, disponendo le informazioni in una comoda vista a griglia auto-impaginata.
+
+Funcionalità incluse:
+* Una scheda informativa compatta per ogni velivolo tracciato
+* Layout a griglia auto-adattivo alla larghezza della finestra
+* Timer "last seen" aggiornato costantemente
+* Gestione dello scorrimento verticale (tramite tasti Freccia o tasti `W`/`S`) per visualizzare decine di aerei contemporaneamente
+* Refresh intelligente ed estremamente reattivo per evitare sfarfallii dello schermo
+
 ---
 
 ### Installazione
@@ -291,17 +313,24 @@ pip install pyserial rich
    * Carica `V2/TX/transmitter/transmitter.ino` sulla scheda Heltec trasmittente.
    * Carica `V2/RX/receiver/receiver.ino` sulla scheda Heltec ricevente.
 
-### 5. Utilizzo dello strumento Screenshot (Opzionale)
+### Avvio del sistema
 
-Se desideri salvare sul computer lo screenshot di una delle pagine OLED visualizzate sull'Heltec:
-1. Chiudi temporaneamente qualsiasi software o script che stia leggendo la porta seriale dell'Heltec.
-2. Tieni premuto per più di 2 secondi il pulsante **PRG** sulla scheda interessata.
-3. Esegui lo script Python dedicato alla ricezione dello screenshot:
-   ```bash
-   python3 tools/grab_screen.py
-   ```
-   Lo script intercetta il dump esadecimale e salva un'immagine `.png` direttamente nella cartella di esecuzione.
+### 1. Avviare il ricevitore (lato visualizzazione)
 
+Spostati nella directory della versione scelta ed esegui lo script di ricezione:
 
-## Autore
-Sviluppato da: [StringLess80](https://github.com/StringLess80)
+```bash
+cd V2/RX
+python3 recv.py
+```
+
+### 2. Avviare il trasmettitore (lato RTL‑SDR)
+
+Apri un altro terminale sulla macchina connessa all'SDR e avvia lo script di trasmissione:
+
+```bash
+cd V2/TX
+python3 transmit.py
+```
+
+Le prestazioni generali possono variare in base al rumore elettromagnetico circostante, alla vicinanza tra i nodi, alla potenza impostata e alla velocità di elaborazione della porta seriale USB.
