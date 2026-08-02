@@ -1,6 +1,9 @@
 ### ADS‑B over LoRa — Heltec LoRa 32 V3
 
-ESP32 · Heltec V3LoRa · SX1262868 MHz · EUPython 3.10+
+![Platform](https://img.shields.io/badge/ESP32-Heltec%20V3-blue)
+![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
+![Band](https://img.shields.io/badge/868%20MHz-EU-orange)
+![Python](https://img.shields.io/badge/Python-3.10+-yellow)
 
 ### Trasmissione a lunga distanza di dati ADS‑B / Mode‑S tramite LoRa con schede Heltec ESP32
 
