@@ -18,8 +18,41 @@ Il sistema è ottimizzato per:
 * Efficienza di banda
 * Lunga portata
 * Bassa latenza
-* Basso utilizzo della CPU
+* Monitoraggio visivo locale tramite display OLED integrato
 * Framing robusto e validazione dei pacchetti
+
+---
+
+### Novità Firmware: Monitoraggio OLED & Interattività
+
+Il firmware è stato esteso per sfruttare il display OLED integrato (SSD1306, 128x64) e il pulsante utente **PRG** (GPIO 0) di Heltec V3. È stato implementato un sistema a **3 pagine** consultabili in tempo reale.
+
+#### Funzionalità Display sul Ricevitore (RX):
+* **Pagina 0 (Live Monitor):** Mostra il numero totale di pacchetti ricevuti, l'RSSI e l'SNR dell'ultimo pacchetto, e la dimensione del payload.
+* **Pagina 1 (Storico RSSI):** Un grafico cartesiano che traccia l'andamento del segnale (RSSI) degli ultimi 20 pacchetti ricevuti, con scala dinamica da -120 a -40 dBm.
+* **Pagina 2 (Configurazione):** Mostra i parametri attuali della radio (Frequenza, Spreading Factor, Bandwidth, Coding Rate).
+
+#### Funzionalità Display sul Trasmettitore (TX):
+* **Pagina 0 (TX Dashboard):** Mostra la conta dei pacchetti trasmessi con successo, la dimensione dell'ultimo frame e lo stato/codice di errore del chip SX1262.
+* **Pagina 1 (Stato Seriale):** Monitora lo stato del parser seriale (fase di sincronizzazione sul marcatore `0x55AA`, byte ricevuti e attesi).
+* **Pagina 2 (Configurazione):** Riepilogo dei parametri radio e potenza di trasmissione (14 dBm).
+
+#### Cattura Screenshot Hardware (OLED Capture):
+Tenendo premuto il pulsante **PRG** per più di 2 secondi, l'ESP32 esegue un dump della memoria dello schermo (1024 byte di frame buffer) e lo invia via seriale protetto dai tag `---START_SCREENSHOT---` e `---END_SCREENSHOT---`, consentendo di salvare l'esatta schermata dell'Heltec direttamente sul PC in formato `.png`.
+
+---
+
+### Galleria Schermate OLED (Heltec V3)
+
+Di seguito sono mostrate le tre schermate di monitoraggio disponibili sull'OLED del ricevitore (RX), catturate direttamente tramite la funzione di screenshot integrata.
+
+<p align="center">
+  <img src="screenshots/page0_monitor.png" width="30%" alt="Pagina 0 - Live Monitor" />
+  <img src="screenshots/page1_graph.png" width="30%" alt="Pagina 1 - Grafico Storico RSSI" />
+  <img src="screenshots/page2_config.png" width="30%" alt="Pagina 2 - Configurazione Radio" />
+</p>
+
+---
 
 ### Flusso dei dati
 
@@ -34,22 +67,24 @@ Versione (V1 o V2)/TX/transmit.py (parsing + serializzazione compatta)
         ↓ 
 Seriale USB (115200 bps)
         ↓
-Heltec LoRa 32 V3 (TX)
+Heltec LoRa 32 V3 (TX)  ← [OLED: Stato TX / Configurazione]
         ↓
 LoRa 868 MHz
         ↓
-Heltec LoRa 32 V3 (RX)
+Heltec LoRa 32 V3 (RX)  ← [OLED: Live Monitor / Grafico RSSI / Configurazione]
         ↓
 Seriale USB (115200 bps)
         ↓
 Versione (V1 o V2)/RX/recv.py (decodifica + dashboard)
 ```
 
+---
+
 ### Perché usare readsb invece di dump1090?
 
 Sebbene il progetto funzioni anche con dump1090, è fortemente consigliato usare readsb.
 
-### Vantaggi di readsb
+### Vantaggi
 
 * Migliore gestione dei messaggi Mode‑S e ADS‑B
 * Decodifica più accurata
@@ -80,13 +115,15 @@ Sostituisci:
 * `<LAT_RICEVITORE>` con la latitudine del tuo ricevitore (es. `41.130000`)
 * `<LON_RICEVITORE>` con la longitudine del tuo ricevitore (es. `13.022000`)
 
-Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:30003`, che è esattamente la porta utilizzata dallo script `transmit.py`.
+Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:30003`, che è esattamente la porta utilizzata dallo script python.
 
 ### Utilizzo di un GPS
 
 Le coordinate del ricevitore possono essere inserite manualmente nel comando precedente, ma è possibile anche utilizzare un modulo GPS collegato al Raspberry Pi o al PC Linux.
 
-In quel caso le coordinate possono essere recuperate automaticamente (ad esempio tramite `gpsd`) e passate a readsb.
+In quel caso le coordinate possono essere recuperate automaticamente e passate a readsb.
+
+---
 
 ### Perché comprimere i dati ADS‑B?
 
@@ -116,11 +153,13 @@ Con LoRa a SF7 / BW125 kHz / CR4:5 il throughput utile è di pochi kbit/s, quind
 | Binario compatto | 18–40 B    |
 | Riduzione        | 65–80%     |
 
+---
+
 ### Hardware
 
 ### Trasmettitore e ricevitore
 
-* 2 × Heltec LoRa 32 V3
+* 2 × Heltec LoRa 32 V3 (ESP32-S3 + SX1262)
 * Collegamento tramite cavo USB‑C
 
 ### Stazione ADS‑B
@@ -142,27 +181,23 @@ Configurazione predefinita nel firmware:
 | Coding Rate      | 4/5       |
 | Potenza TX       | 14 dBm    |
 
-### Compromessi
-
-| Modifica | Effetto                                 |
-| -------- | --------------------------------------- |
-| SF ↑     | Maggiore portata, minore throughput     |
-| BW ↑     | Maggiore throughput, minore sensibilità |
-| CR ↑     | Maggiore robustezza, maggiore airtime   |
-
 ### Mappatura pin Heltec V3
 
-Utilizzata dal firmware basato sulla libreria RadioLib per il modulo LoRa SX1262 integrato:
+La configurazione dei pin include sia il modulo LoRa SX1262, sia la gestione dell'OLED e dei controlli hardware:
 
 | Segnale | GPIO | Descrizione |
 | ------- | ---- | ----------- |
-| CS      | 8    | SPI Chip Select |
-| DIO1    | 14   | Interrupt Pin |
-| RST     | 12   | Reset Pin |
-| BUSY    | 13   | Busy Status Pin |
-| SCK     | 9    | SPI Clock |
-| MISO    | 11   | SPI MISO |
-| MOSI    | 10   | SPI MOSI |
+| **CS**  | 8    | SPI Chip Select (LoRa) |
+| **DIO1**| 14   | Interrupt Pin (LoRa) |
+| **RST** | 12   | Reset Pin (LoRa) |
+| **BUSY**| 13   | Busy Status Pin (LoRa) |
+| **SDA** | 17   | I2C Data (OLED) |
+| **SCL** | 18   | I2C Clock (OLED) |
+| **OLED RST** | 21| Reset (OLED) |
+| **Vext**| 36   | Alimentazione Display (LOW = ON) |
+| **PRG** | 0    | Pulsante Utente / Boot (LOW = Premuto) |
+
+---
 
 ### Protocollo binario compatto
 
@@ -194,7 +229,7 @@ I dati vengono trasmessi in modo dinamico: solo i campi realmente popolati nel m
 | **9** | Ground | `<B` | `uint8` | Stato al suolo: `1` (GND), `0` (AIR) |
 | **10** | Type | `<B` | `uint8` | Categoria/tipo del velivolo |
 
-*Nota: L'RSSI non è trasmesso nel payload ma viene opzionalmente calcolato e aggiunto a livello locale dalla scheda ricevente durante l'elaborazione del pacchetto.*
+---
 
 ### Componenti software
 
@@ -221,16 +256,7 @@ Responsabilità:
 * Rimozione automatica dei velivoli non più attivi (timeout di 150 secondi)
 * Rendering grafico della dashboard nel terminale con aggiornamento reattivo (libreria Rich)
 
-### Dashboard in tempo reale
-
-La dashboard è disegnata per adattarsi in tempo reale al vostro terminale, disponendo le informazioni in una comoda vista a griglia auto-impaginata.
-
-Funcionalità incluse:
-* Una scheda informativa compatta per ogni velivolo tracciato
-* Layout a griglia auto-adattivo alla larghezza della finestra
-* Timer "last seen" aggiornato costantemente
-* Gestione dello scorrimento verticale (tramite tasti Freccia o tasti `W`/`S`) per visualizzare decine di aerei contemporaneamente
-* Refresh intelligente ed estremamente reattivo per evitare sfarfallii dello schermo
+---
 
 ### Installazione
 
@@ -252,7 +278,7 @@ cd Heltec-LoRa-32-RF-Data-Transmission
 
 ### 3. Installare le dipendenze Python
 
-Installare le librerie necessarie (si consiglia l'utilizzo di un ambiente virtuale `venv` se si lavora su distribuzioni Linux moderne):
+Installare le librerie necessarie tramite pip (si consiglia l'utilizzo di un ambiente virtuale `venv`):
 
 ```bash
 pip install pyserial rich
@@ -260,54 +286,22 @@ pip install pyserial rich
 
 ### 4. Flashare le schede Heltec
 
-1. Apri l'Arduino IDE e installa i pacchetti di supporto per schede **ESP32** (Heltec) e la libreria **RadioLib** dal Gestore Librerie.
-2. Collega le schede e carica i rispettivi firmware (l'esempio fa riferimento alla versione più recente `V2`):
+1. Apri l'Arduino IDE e installa i pacchetti di supporto per schede **ESP32** (Heltec) e le librerie **RadioLib** e **U8g2** dal Gestore Librerie.
+2. Collega le schede e carica i rispettivi firmware:
    * Carica `V2/TX/transmitter/transmitter.ino` sulla scheda Heltec trasmittente.
    * Carica `V2/RX/receiver/receiver.ino` sulla scheda Heltec ricevente.
 
-### Avvio del sistema
+### 5. Utilizzo dello strumento Screenshot (Opzionale)
 
-### 1. Avviare il ricevitore (lato visualizzazione)
+Se desideri salvare sul computer lo screenshot di una delle pagine OLED visualizzate sull'Heltec:
+1. Chiudi temporaneamente qualsiasi software o script che stia leggendo la porta seriale dell'Heltec.
+2. Tieni premuto per più di 2 secondi il pulsante **PRG** sulla scheda interessata.
+3. Esegui lo script Python dedicato alla ricezione dello screenshot:
+   ```bash
+   python3 tools/grab_screen.py
+   ```
+   Lo script intercetta il dump esadecimale e salva un'immagine `.png` direttamente nella cartella di esecuzione.
 
-Spostati nella directory della versione scelta ed esegui lo script di ricezione:
-
-```bash
-cd V2/RX
-python3 recv.py
-```
-
-### 2. Avviare il trasmettitore (lato RTL‑SDR)
-
-Apri un altro terminale sulla macchina connessa all'SDR e avvia lo script di trasmissione:
-
-```bash
-cd V2/TX
-python3 transmit.py
-```
-
-### Prestazioni
-
-Valori indicativi misurati sul campo con payload medi da 24 byte:
-
-| Metrica            | Valore tipico |
-| ------------------ | ------------- |
-| Airtime del pacchetto | ~55 ms        |
-| Pacchetti al secondo | ~18 pkt/s     |
-| Throughput utile   | ~3–5 kbit/s   |
-| Latenza end‑to‑end | 100–300 ms    |
-
-Le prestazioni generali possono variare in base al rumore elettromagnetico circostante, alla vicinanza tra i nodi, alla potenza impostata e alla velocità di elaborazione della porta seriale USB.
-
-### Limitazioni attuali
-
-### Nessuna consegna garantita (Best Effort)
-Il collegamento radio LoRa funziona in modalità broadcast unidirezionale senza pacchetti di ACK (Acknowledge) o ritrasmissioni automatiche. Alcuni pacchetti potrebbero andare persi in caso di forte rumore radio.
-
-### Disponibilità dei dati SBS
-Non tutti i messaggi emessi dai velivoli contengono contemporaneamente tutti i parametri. I dati sulla posizione (latitudine/longitudine), altitudine e velocità vengono trasmessi dal transponder in momenti separati e saranno gradualmente aggregati nel database locale del ricevitore.
-
-### Duty cycle e Normative
-L'uso delle frequenze libere nella banda ISM 868 MHz deve rispettare rigorosamente le normative nazionali ed europee (ETSI) relative al tempo massimo di trasmissione consentito (Duty Cycle, tipicamente l'1% su questa banda).
 
 ## Autore
 Sviluppato da: [StringLess80](https://github.com/StringLess80)
