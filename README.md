@@ -71,17 +71,23 @@ In scenari reali con traffico intenso, readsb produce generalmente più messaggi
 
 Avvia readsb con il seguente comando:
 
-`sudo readsb \ --device-type rtlsdr \ --device 0 \ --gain auto \ --lat LAT_RICEVITORE \ --lon LON_RICEVITORE \ --net \ --net-bind-address 127.0.0.1 \ --net-sbs-port 30003`
+```
+sudo readsb \
+  --device-type rtlsdr \
+  --device 0 \
+  --gain auto \
+  --lat 41.130000 \
+  --lon 13.022000 \
+  --net \
+  --net-bind-address 127.0.0.1 \
+  --net-sbs-port 30003 \
+```
 
 Sostituisci:
 
 * `LAT_RICEVITORE` con la latitudine del tuo ricevitore
 
 * `LON_RICEVITORE` con la longitudine del tuo ricevitore
-
-Esempio per Bologna:
-
-`sudo readsb \ --device-type rtlsdr \ --device 0 \ --gain auto \ --lat 44.4733445 \ --lon 11.3803298 \ --net \ --net-bind-address 127.0.0.1 \ --net-sbs-port 30003`
 
 Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:30003`, che è esattamente ciò che utilizza `TX/transmit.py`.
 
@@ -90,16 +96,6 @@ Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:3000
 Le coordinate del ricevitore possono essere inserite manualmente nel comando precedente, ma è possibile anche utilizzare un modulo GPS collegato al Raspberry Pi o al PC Linux.
 
 In quel caso le coordinate possono essere recuperate automaticamente (ad esempio tramite `gpsd`) e passate a readsb.
-
-Questo approccio è utile per:
-
-* stazioni riceventi mobili;
-
-* installazioni temporanee;
-
-* test sul campo;
-
-* sistemi alimentati a batteria.
 
 ### Perché comprimere i dati ADS‑B?
 
@@ -339,7 +335,5 @@ Non tutti i messaggi contengono tutti i campi. Posizione, quota e velocità poss
 
 L’utilizzo della banda ISM 868 MHz deve rispettare le normative ETSI applicabili al duty‑cycle.
 
-## Author 
-**Alessandro Iglina** 
-
-GitHub: https://github.com/StringLess80
+## Author:
+https://github.com/StringLess80
