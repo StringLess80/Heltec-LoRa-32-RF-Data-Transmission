@@ -61,7 +61,7 @@ def select_fields():
         print("Nessun campo selezionato. Chiusura.")
         sys.exit(1)
 
-    # FIX CRITICO: Ordina sempre i campi per BIT crescente (dal bit 0 al 15)
+    # Ordina sempre i campi per BIT crescente (dal bit 0 al 15)
     # Il ricevitore legge i byte in questo identico ordine. Se non sono ordinati, i byte si mescolano.
     fields.sort(key=lambda x: x[3])
 
@@ -92,10 +92,8 @@ def encode_packet(cached_data, selected_fields):
             elif code == "CAL":
                 field = value.encode()[:8].ljust(8, b"\x00")
             elif code == "ALT":
-                # FIX: Mantiene in piedi (ft) come in aviazione
                 field = struct.pack("<H", max(0, min(65535, int(float(value)))))
             elif code == "VEL":
-                # FIX: Mantiene in nodi (kt)
                 field = struct.pack("<H", max(0, min(65535, int(float(value)))))
             elif code == "DIR":
                 heading = int(float(value)) % 360
@@ -107,7 +105,6 @@ def encode_packet(cached_data, selected_fields):
             elif code == "VER":
                 field = struct.pack("<h", max(-32768, min(32767, int(float(value)))))
             elif code == "SQU":
-                # FIX: Lo squawk è un numero Ottale (Base 8), non decimale!
                 field = struct.pack("<H", int(value, 8))
             elif code == "GRO":
                 ground = 1 if value in ("1", "-1", "true", "True") else 0
@@ -197,7 +194,6 @@ def main():
                 if icao not in aircraft_db:
                     aircraft_db[icao] = {"last_tx": 0, "last_seen": now, "data": {}}
                 
-                # FIX: Aggiorniamo l'orario di ultima ricezione correttamete qui
                 aircraft_db[icao]["last_seen"] = now
 
                 for idx in range(len(data)):

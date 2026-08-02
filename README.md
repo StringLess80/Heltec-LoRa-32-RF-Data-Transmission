@@ -101,8 +101,6 @@ LoRa at **SF7 / BW125 kHz / CR4:5** provides only a few kbit/s of useful through
 ### Transmitter and Receiver
 
 - 2 × **Heltec LoRa 32 V3**
-- ESP32‑S3
-- SX1262 LoRa transceiver
 - USB‑C connection
 
 ### ADS‑B Station
@@ -110,7 +108,7 @@ LoRa at **SF7 / BW125 kHz / CR4:5** provides only a few kbit/s of useful through
 - Raspberry Pi or Linux PC
 - RTL‑SDR dongle
 - 1090 MHz antenna
-- dump1090-fa or readsb
+- dump1090 or readsb
 
 ---
 
@@ -177,25 +175,6 @@ Used by the RadioLib firmware:
 Only fields present in the original SBS message are serialized.
 
 ---
-
-## Repository Structure
-
-```text
-.
-├── TX/
-│   ├── transmit.py
-│   └── transmitter.ino
-├── RX/
-│   ├── recv.py
-│   └── receiver.ino
-├── screenshots/
-│   ├── dashboard.png
-│   └── diagram.png
-└── README.md
-```
-
----
-
 ## Software Components
 
 ### TX/transmit.py
@@ -234,29 +213,13 @@ Features:
 - Automatic grid layout
 - Dynamic terminal width adaptation
 - Last‑seen timer
-- Altitude, speed, track, latitude and longitude
-- Clean refresh without scrolling
+- Clean refresh
 
 ---
 
 ## Installation
 
 ### 1. Install dump1090 or readsb
-
-Raspberry Pi OS:
-
-```bash
-sudo apt update
-sudo apt install readsb
-```
-
-Verify the SBS stream:
-
-```bash
-nc 127.0.0.1 30003
-```
-
----
 
 ### 2. Clone the repository
 
@@ -355,16 +318,4 @@ Operation in the **868 MHz ISM band** must comply with applicable **ETSI duty‑
 
 GitHub: https://github.com/StringLess80
 
-<<<<<<< HEAD
 Repository: https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission
-
----
-
-<div align="center">
-
-**If you find this project interesting, consider leaving a ⭐ on GitHub**
-
-</div>
-=======
-Repository: https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission
->>>>>>> a7e7920 (Update README.md)
