@@ -74,7 +74,7 @@ Se un parametro non supera la soglia di variazione, viene omesso dalla serializz
 #### 3. Gestione dei Frame di Sincronizzazione (FULL) ed Eventi (EVENT)
 * **Frame DELTA:** Contiene solo i parametri fisici che hanno superato le soglie di tolleranza.
 * **Frame EVENT:** Generato istantaneamente in caso di variazione di parametri discreti e critici come il codice *Squawk* o lo stato al suolo (*Ground State*).
-* **Frame FULL (Heartbeat):** Trasmesso periodicamente (ogni 5 secondi per configurazione Demo ad alta frequenza) per inviare lo stato completo del velivolo. Questo garantisce che eventuali ricevitori sintonizzati in un secondo momento possano ricostruire la telemetria completa in pochi istanti.
+* **Frame FULL (Heartbeat):** Trasmesso periodicamente (ogni 5 secondi per configurazione ad alta frequenza) per inviare lo stato completo del velivolo. Questo garantisce che eventuali ricevitori sintonizzati in un secondo momento possano ricostruire la telemetria completa in pochi istanti.
 
 ---
 
@@ -150,7 +150,7 @@ Seriale USB (115200 bps)
         ↓
 Heltec LoRa 32 V3 (TX)  ← [OLED: Stato TX / Configurazione]
         ↓
-LoRa 868 MHz (No Duty-Cycle Limit / Demo Mode)
+LoRa 868 MHz (No Duty-Cycle Limit)
         ↓
 Heltec LoRa 32 V3 (RX)  ← [OLED: Live Monitor / Grafico RSSI / Configurazione]
         ↓
@@ -423,7 +423,7 @@ If a parameter does not exceed its delta threshold, it is omitted from the seria
 #### 3. Sync Frame (FULL) and Event Frame (EVENT) Management
 * **DELTA Frame:** Contains only the physical parameters that have exceeded their delta threshold.
 * **EVENT Frame:** Generated instantaneously when discrete, critical parameters change (e.g., *Squawk* code or *Ground State*).
-* **FULL Frame (Heartbeat):** Transmitted periodically (every 5 seconds in high-frequency Demo configuration) to send the complete aircraft status. This ensures that any receivers powered on at a later time can reconstruct full aircraft telemetries within moments.
+* **FULL Frame (Heartbeat):** Transmitted periodically (every 5 seconds in high-frequency configuration) to send the complete aircraft status. This ensures that any receivers powered on at a later time can reconstruct full aircraft telemetries within moments.
 
 ---
 
@@ -499,7 +499,7 @@ USB Serial (115200 bps)
         ↓
 Heltec LoRa 32 V3 (TX)  ← [OLED: TX Status / Configuration]
         ↓
-LoRa 868 MHz (No Duty-Cycle Limit / Demo Mode)
+LoRa 868 MHz (No Duty-Cycle Limit)
         ↓
 Heltec LoRa 32 V3 (RX)  ← [OLED: Live Monitor / RSSI Graph / Configuration]
         ↓

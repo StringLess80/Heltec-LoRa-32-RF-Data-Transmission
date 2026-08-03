@@ -22,7 +22,7 @@ SBS_HOST = "127.0.0.1"
 SBS_PORT = 30003
 BAUDRATE = 115200
 
-# Temporizzazioni (Modalità Alta Frequenza per Demo)
+# Temporizzazioni (Modalità Alta Frequenza)
 MIN_INTERVAL_PER_AIRCRAFT = 0.5   # Valuta i movimenti 2 volte al secondo per aereo
 LORA_TX_AIRTIME_DELAY = 0.05      # 50ms di intervallo minimo tra trasmissioni consecutive
 FULL_FRAME_INTERVAL = 5.0         # Forza un invio completo ogni 5 secondi per sincronizzazione RX
