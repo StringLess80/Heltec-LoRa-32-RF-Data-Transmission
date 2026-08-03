@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
 """
-ADS-B LoRa Radar Dashboard
-============================
-
-Riceve via porta seriale i pacchetti binari inviati dal trasmettitore
-LoRa (vedi tx.py), li decodifica e mostra una
-dashboard testuale interattiva (basata su "rich") con lo stato di
-tutti gli aeromobili attualmente tracciati.
-
-La UI si aggiorna in modo "intelligente": in modo istantaneo quando
-l'utente scorre la lista con i tasti, e a intervalli regolari quando
-arrivano nuovi dati via radio, per evitare sfarfallii e consumo di
-CPU inutile.
+ADS-B LoRa Radar Dashboard (Ottimizzato e Ordinato)
+===================================================
 """
 
+import math
 import os
 import struct
 import sys
@@ -29,7 +20,6 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
-# Import specifici per l'input non bloccante, diversi per piattaforma
 if os.name == "nt":
     import msvcrt
 else:
@@ -40,45 +30,37 @@ else:
 # =====================================================================
 # CONFIGURAZIONE
 # =====================================================================
+TIMEOUT = 45  # Timeout di rimozione bersaglio silente (secondi)
 
-TIMEOUT = 60  # secondi dopo i quali un aeromobile senza aggiornamenti scade
+# Coordinate geografiche del ricevitore per il calcolo della distanza
+HOME_LAT = 44.473328
+HOME_LON = 11.382953
 
 SYNC = b"\x55\xAA"
 HEADER_SIZE = 7
 
-# =====================================================================
-# MAPPA DEI CAMPI
-# =====================================================================
-
-# bit -> (codice campo, chiave dizionario, formato struct, dimensione byte)
+# Strutture di decodifica fisse per eliminare l'overhead a runtime
+STRUCT_HEADER = struct.Struct("<HHHB")
 FIELDS_DEF = {
-    0: ("ICA", "icao", "<I", 4),
-    1: ("CAL", "callsign", "8s", 8),
-    2: ("ALT", "alt", "<H", 2),
-    3: ("VEL", "speed", "<H", 2),
-    4: ("DIR", "heading", "<H", 2),
-    5: ("LAT", "lat", "<i", 4),
-    6: ("LON", "lon", "<i", 4),
-    7: ("VER", "vertical", "<h", 2),
-    8: ("SQU", "squawk", "<H", 2),
-    9: ("GRO", "ground", "<B", 1),
-    10: ("TIP", "type", "<B", 1),
+    0: ("ICA", "icao", struct.Struct("<I")),
+    1: ("CAL", "callsign", struct.Struct("8s")),
+    2: ("ALT", "alt", struct.Struct("<H")),
+    3: ("VEL", "speed", struct.Struct("<H")),
+    4: ("DIR", "heading", struct.Struct("<H")),
+    5: ("LAT", "lat", struct.Struct("<i")),
+    6: ("LON", "lon", struct.Struct("<i")),
+    7: ("VER", "vertical", struct.Struct("<h")),
+    8: ("SQU", "squawk", struct.Struct("<H")),
+    9: ("GRO", "ground", struct.Struct("<B")),
+    10: ("TIP", "type", struct.Struct("<B")),
 }
 
-# Stato globale: dati per ICAO e ordine di prima apparizione (per la UI)
 aircraft = {}
-aircraft_order = []
-
 console = Console()
 
 
 class NonBlockingInput:
-    """
-    Gestisce la cattura dei tasti in modo non bloccante e immediato,
-    in modo compatibile sia con Windows (msvcrt) che con Unix
-    (termios/tty in modalita' cbreak).
-    """
-
+    """Gestione dell'input per terminale senza attese."""
     def __init__(self):
         self.is_windows = os.name == "nt"
         if not self.is_windows:
@@ -102,120 +84,84 @@ class NonBlockingInput:
                 pass
 
     def get_key(self):
-        """
-        Legge un singolo tasto senza bloccare l'esecuzione.
-
-        Ritorna:
-            str | None: "up", "down", "exit" oppure None se non e'
-            stato premuto (o riconosciuto) nessun tasto utile.
-        """
-        if self.is_windows:
-            return self._get_key_windows()
-        return self._get_key_unix()
+        return self._get_key_windows() if self.is_windows else self._get_key_unix()
 
     def _get_key_windows(self):
         if not msvcrt.kbhit():
             return None
-
         ch = msvcrt.getch()
-        if ch in (b"\x00", b"\xe0"):  # Prefisso tasti freccia
+        if ch in (b"\x00", b"\xe0"):
             ch2 = msvcrt.getch()
-            if ch2 == b"H":
-                return "up"
-            if ch2 == b"P":
-                return "down"
-        elif ch.lower() in (b"w", b"k"):
-            return "up"
-        elif ch.lower() in (b"s", b"j"):
-            return "down"
-        elif ch.lower() == b"q" or ch == b"\x03":
-            return "exit"
+            if ch2 == b"H": return "up"
+            if ch2 == b"P": return "down"
+        elif ch.lower() in (b"w", b"k"): return "up"
+        elif ch.lower() in (b"s", b"j"): return "down"
+        elif ch.lower() == b"q" or ch == b"\x03": return "exit"
         return None
 
     def _get_key_unix(self):
-        rlist, _, _ = select.select([sys.stdin], [], [], 0)
-        if not rlist:
+        r, _, _ = select.select([sys.stdin], [], [], 0)
+        if not r:
             return None
-
         ch = sys.stdin.read(1)
-        if ch == "\x1b":  # Inizio sequenza di escape (es. tasti freccia)
+        if ch == "\x1b":
             r2, _, _ = select.select([sys.stdin], [], [], 0.05)
             if r2:
                 seq = sys.stdin.read(2)
-                if seq == "[A":
-                    return "up"
-                if seq == "[B":
-                    return "down"
-        elif ch.lower() in ("w", "k"):
-            return "up"
-        elif ch.lower() in ("s", "j"):
-            return "down"
-        elif ch.lower() == "q" or ch == "\x03":
-            return "exit"
+                if seq == "[A": return "up"
+                if seq == "[B": return "down"
+        elif ch.lower() in ("w", "k"): return "up"
+        elif ch.lower() in ("s", "j"): return "down"
+        elif ch.lower() == "q" or ch == "\x03": return "exit"
         return None
 
 
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """Calcola la distanza in km (Formula di Haversine) tra due punti."""
+    rad_lat1, rad_lat2 = math.radians(lat1), math.radians(lat2)
+    dlat = rad_lat2 - rad_lat1
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(rad_lat1) * math.cos(rad_lat2) * math.sin(dlon / 2)**2
+    return 6371.0 * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+
+
 def parse_packet(header, payload):
-    """
-    Decodifica un pacchetto (header + payload) gia' validato dal CRC
-    e aggiorna il database globale degli aeromobili.
-
-    Argomenti:
-        header (bytes): 7 byte di header (SYNC, seq, mask, length).
-        payload (bytes): byte del payload, secondo la bitmask.
-    """
-    _sync, _seq, mask, _length = struct.unpack("<HHHB", header)
-
+    """Decodifica il flusso binario e mappa le proprietà dell'aeromobile."""
+    _sync, _seq, mask, _length = STRUCT_HEADER.unpack(header)
     offset = 0
     data = {}
 
     for bit in range(16):
-        if not (mask & (1 << bit)):
+        if not (mask & (1 << bit)) or bit not in FIELDS_DEF:
             continue
 
-        if bit not in FIELDS_DEF:
-            continue
-
-        code, key, fmt, size = FIELDS_DEF[bit]
+        code, key, struct_obj = FIELDS_DEF[bit]
+        size = struct_obj.size
 
         if offset + size > len(payload):
-            return  # payload troncato/corrotto: scarta il pacchetto
+            return
 
         raw = payload[offset:offset + size]
         offset += size
+        value = struct_obj.unpack(raw)[0]
 
-        value = struct.unpack(fmt, raw)[0]
-
-        if code == "ICA":
-            data["icao"] = f"{value:06X}"
-        elif code == "CAL":
-            data["callsign"] = value.decode(errors="ignore").strip("\x00 ")
-        elif code == "ALT":
-            data["alt"] = f"{value} ft"
-        elif code == "VEL":
-            data["speed"] = f"{value} kt"
-        elif code == "DIR":
-            data["heading"] = f"{value}°"
-        elif code == "LAT":
-            data["lat"] = value / 1e7
-        elif code == "LON":
-            data["lon"] = value / 1e7
-        elif code == "VER":
-            data["vertical"] = f"{value} fpm"
-        elif code == "SQU":
-            data["squawk"] = f"{value:04o}"
-        elif code == "GRO":
-            data["ground"] = "GND" if value else "AIR"
-        elif code == "TIP":
-            data["type"] = str(value)
+        if code == "ICA": data["icao"] = f"{value:06X}"
+        elif code == "CAL": data["callsign"] = value.decode(errors="ignore").strip("\x00 ")
+        elif code == "ALT": data["alt"] = f"{value} ft"
+        elif code == "VEL": data["speed"] = f"{value} kt"
+        elif code == "DIR": data["heading"] = f"{value}°"
+        elif code == "LAT": data["lat"] = value / 1e7
+        elif code == "LON": data["lon"] = value / 1e7
+        elif code == "VER": data["vertical"] = f"{value} fpm"
+        elif code == "SQU": data["squawk"] = f"{value:04o}"
+        elif code == "GRO": data["ground"] = "GND" if value else "AIR"
+        elif code == "TIP": data["type"] = str(value)
 
     if "icao" not in data:
-        return  # senza ICAO non possiamo identificare l'aeromobile
+        return
 
     icao = data["icao"]
-
     if icao not in aircraft:
-        aircraft_order.append(icao)
         aircraft[icao] = {}
 
     aircraft[icao].update(data)
@@ -223,75 +169,48 @@ def parse_packet(header, payload):
 
 
 def remove_old():
-    """Rimuove dal database gli aeromobili non aggiornati da troppo tempo."""
+    """Pulisce i tracciati non più attivi via radio."""
     now = datetime.now()
-    expired = [
-        icao for icao, info in aircraft.items()
-        if now - info["last"] > timedelta(seconds=TIMEOUT)
-    ]
+    limit = timedelta(seconds=TIMEOUT)
+    expired = [icao for icao, info in aircraft.items() if now - info["last"] > limit]
     for icao in expired:
         del aircraft[icao]
-        if icao in aircraft_order:
-            aircraft_order.remove(icao)
 
-
-# =====================================================================
-# UI - COSTRUZIONE DELLA DASHBOARD
-# =====================================================================
 
 def build_aircraft_card(icao, data):
-    """
-    Costruisce il pannello (Panel) "rich" che rappresenta un singolo
-    aeromobile, con colore del bordo dipendente dall'eta' del dato.
-
-    Argomenti:
-        icao (str): identificativo ICAO dell'aeromobile.
-        data (dict): dati correnti dell'aeromobile.
-
-    Ritorna:
-        rich.panel.Panel: il pannello pronto per essere mostrato.
-    """
+    """Costruisce il widget visivo dell'aeromobile."""
     age = int((datetime.now() - data["last"]).total_seconds())
     last_rx = data["last"].strftime("%H:%M:%S")
 
-    if age < 15:
-        border_color = "green"
-        age_color = "bold bright_green"
-    elif age < 60:
-        border_color = "yellow"
-        age_color = "bold bright_yellow"
+    if age < 5:
+        border, age_style = "green", "bold bright_green"
+    elif age < 15:
+        border, age_style = "yellow", "bold bright_yellow"
     else:
-        border_color = "red"
-        age_color = "bold dim red"
+        border, age_style = "red", "bold dim red"
 
     content = Text()
-
-    # Riga con i dati di volo principali (quota, velocita', direzione)
     flight_data = []
-    if "alt" in data:
-        flight_data.append(f"▲ {data['alt']}")
-    if "speed" in data:
-        flight_data.append(f"► {data['speed']}")
-    if "heading" in data:
-        flight_data.append(f"∡ {data['heading']}")
+    if "alt" in data: flight_data.append(f"▲ {data['alt']}")
+    if "speed" in data: flight_data.append(f"► {data['speed']}")
+    if "heading" in data: flight_data.append(f"∡ {data['heading']}")
 
     if flight_data:
         content.append(" | ".join(flight_data) + "\n", style="cyan")
 
-    # Riga con la posizione geografica
+    # Mostra coordinate GPS e calcolo immediato distanza
     if "lat" in data and "lon" in data:
-        content.append(
-            f"⌖ {data['lat']:.5f}, {data['lon']:.5f}\n", style="bright_yellow"
-        )
+        dist = calculate_distance(HOME_LAT, HOME_LON, data["lat"], data["lon"])
+        content.append(f"⌖ {data['lat']:.5f}, {data['lon']:.5f} ", style="bright_yellow")
+        content.append(f"({dist:.1f} km)\n", style="bold white on red")
+        data["_distance"] = dist  # Memorizza per ordinamento dinamico
+    else:
+        data["_distance"] = float("inf")  # Manda in fondo se senza coordinate
 
-    # Riga con i dati tecnici (rateo verticale, squawk, stato al suolo)
     tech_data = []
-    if "vertical" in data:
-        tech_data.append(f"↕ {data['vertical']}")
-    if "squawk" in data:
-        tech_data.append(f"SQK: {data['squawk']}")
-    if "ground" in data:
-        tech_data.append(f"[{data['ground']}]")
+    if "vertical" in data: tech_data.append(f"↕ {data['vertical']}")
+    if "squawk" in data: tech_data.append(f"SQK: {data['squawk']}")
+    if "ground" in data: tech_data.append(f"[{data['ground']}]")
 
     if tech_data:
         content.append(" • ".join(tech_data) + "\n", style="magenta")
@@ -299,152 +218,83 @@ def build_aircraft_card(icao, data):
     if len(content) > 0:
         content.append("\n")
 
-    content.append(f"⏱ {age}s ago", style=age_color)
+    content.append(f"⏱ {age}s ago", style=age_style)
     content.append(f"  (Rx: {last_rx})", style="dim white")
 
     ident = data.get("callsign", "NO IDENT")
-    card_title = f"✈ {icao} | {ident}"
-
-    return Panel(
-        content,
-        title=card_title,
-        title_align="left",
-        border_style=border_color,
-        padding=(1, 2),
-        width=42,
-    )
+    return Panel(content, title=f"✈ {icao} | {ident}", title_align="left", border_style=border, padding=(1, 2), width=44)
 
 
 def build_ui(term_width, term_height, row_offset):
-    """
-    Costruisce l'intera dashboard: header, griglia di card degli
-    aeromobili (con scroll verticale) oppure un messaggio di attesa
-    se non ci sono ancora dati.
+    """Genera la vista completa del radar con ordinamento per distanza."""
+    # Ordina i tracciati in base alla distanza calcolata (o ICAO se non disponibile)
+    sorted_icaos = sorted(aircraft.keys(), key=lambda k: (aircraft[k].get("_distance", float("inf")), k))
+    cards = [build_aircraft_card(icao, aircraft[icao]) for icao in sorted_icaos]
 
-    Argomenti:
-        term_width (int): larghezza corrente del terminale.
-        term_height (int): altezza corrente del terminale.
-        row_offset (int): riga della griglia da cui iniziare a
-            mostrare i contenuti (per lo scroll).
-
-    Ritorna:
-        tuple: (rich.console.Group, row_offset) dove row_offset e'
-        stato "clampato" ai limiti validi.
-    """
-    cards = [
-        build_aircraft_card(icao, aircraft[icao])
-        for icao in aircraft_order
-        if icao in aircraft
-    ]
-
-    card_width = 42
-    col_spacing = 2
-    cols = max(1, term_width // (card_width + col_spacing))
-
+    cols = max(1, term_width // 46)
     grid_rows = [cards[i:i + cols] for i in range(0, len(cards), cols)]
     total_rows = len(grid_rows)
+    max_visible_rows = max(1, (term_height - 6) // 9)
 
-    row_height = 9
-    usable_height = max(1, term_height - 6)
-    max_visible_rows = max(1, usable_height // row_height)
-
-    # Mantiene lo scroll entro i limiti validi
     max_offset = max(0, total_rows - max_visible_rows)
-    row_offset = min(row_offset, max_offset)
-    row_offset = max(0, row_offset)
-
+    row_offset = max(0, min(row_offset, max_offset))
     visible_rows = grid_rows[row_offset:row_offset + max_visible_rows]
 
     if not cards:
-        main_content = Panel(
-            Text(
-                "\nIn attesa di pacchetti LoRa...\n",
-                style="yellow",
-                justify="center",
-            ),
-            border_style="dim",
-        )
+        main_content = Panel(Text("\nIn attesa di tracciati radar LoRa...\n", style="yellow", justify="center"), border_style="dim")
     else:
-        row_elements = []
+        elements = []
         for row in visible_rows:
-            row_elements.append(Columns(row, expand=False, equal=True))
-            row_elements.append("")  # spaziatura tra le righe
+            elements.append(Columns(row, expand=False, equal=True))
+            elements.append("")
+        if elements: elements.pop()
+        main_content = Group(*elements)
 
-        if row_elements:
-            row_elements.pop()  # rimuove la spaziatura finale superflua
-
-        main_content = Group(*row_elements)
-
-    scroll_status = ""
-    if total_rows > max_visible_rows:
-        scroll_status = (
-            f" | ROW {row_offset + 1}/{total_rows} (Frecce o W/S per scorrere)"
-        )
-
-    header = Panel(
-        Text(
-            f"📡 RADAR LoRa TELEMETRY | TARGETS: {len(aircraft)}{scroll_status}",
-            justify="center",
-            style="bold white on blue",
-        )
-    )
-
+    scroll = f" | ROW {row_offset + 1}/{total_rows} (Frecce/WS per scorrere)" if total_rows > max_visible_rows else ""
+    header = Panel(Text(f"📡 RADAR LoRa TELEMETRY | ATTIVI: {len(aircraft)}{scroll}", justify="center", style="bold white on blue"))
     return Group(header, "\n", main_content), row_offset
 
 
-# =====================================================================
-# MAIN LOOP
-# =====================================================================
-
 def main():
-    """Individua la porta seriale, avvia la ricezione e la UI live."""
-    ports = [
-        port for port in serial.tools.list_ports.comports()
-        if port.device.startswith(("/dev/ttyUSB", "/dev/ttyACM", "COM"))
-    ]
-
+    ports = [p for p in serial.tools.list_ports.comports() if p.device.startswith(("/dev/ttyUSB", "/dev/ttyACM", "COM"))]
     if not ports:
         print("Nessuna porta seriale trovata.")
         sys.exit(1)
 
     if len(ports) == 1:
         port_name = ports[0].device
-        print(f"Uso automaticamente {port_name}")
+        print(f"Uso automatico: {port_name}")
     else:
         print("\nPorte disponibili:")
         for i, port in enumerate(ports):
             print(f"[{i}] {port.device} - {port.description}")
 
-        try:
-            choice = int(input("\nSeleziona il numero della porta RX: "))
-            port_name = ports[choice].device
-        except (ValueError, IndexError):
-            sys.exit(1)
+        port_name = None
+        while port_name is None:
+            try:
+                choice = int(input("\nSeleziona porta RX: "))
+                port_name = ports[choice].device
+            except (ValueError, IndexError):
+                print("Scelta non valida.")
 
     try:
-        # timeout=0 rende la lettura seriale completamente non bloccante
         ser = serial.Serial(port_name, 115200, timeout=0)
     except Exception as exc:
-        print(f"Errore: {exc}")
+        print(f"Errore connessione: {exc}")
         sys.exit(1)
 
     buffer = b""
     row_offset = 0
     last_ui_update = 0.0
-    # Aggiorna i dati sulla UI al massimo ogni 100ms per evitare sfarfallii
     ui_update_interval = 0.1
 
     with NonBlockingInput() as key_in:
-        initial_ui, row_offset = build_ui(
-            console.size.width, console.size.height, row_offset
-        )
-        with Live(initial_ui, console=console, screen=True, auto_refresh=False) as live:
+        init_ui, row_offset = build_ui(console.size.width, console.size.height, row_offset)
+        with Live(init_ui, console=console, screen=True, auto_refresh=False) as live:
             while True:
                 now = time.time()
-                data_received = False
-                key_pressed = False
+                data_received, key_pressed = False, False
 
-                # 1. Lettura seriale immediata (non bloccante)
                 raw = ser.read(2048)
                 if raw:
                     buffer += raw
@@ -457,7 +307,6 @@ def main():
                             break
 
                         buffer = buffer[idx:]
-
                         if len(buffer) < HEADER_SIZE:
                             break
 
@@ -474,10 +323,14 @@ def main():
                         payload = packet[HEADER_SIZE:-2]
                         crc_rx = struct.unpack("<H", packet[-2:])[0]
 
-                        if (zlib.crc32(payload) & 0xFFFF) == crc_rx:
+                        if (zlib.crc32(header + payload) & 0xFFFF) == crc_rx:
                             parse_packet(header, payload)
+                        else:
+                            buffer = packet[2:] + buffer
 
-                # 2. Controllo tastiera immediato
+                    if len(buffer) > 4096:
+                        buffer = buffer[-4096:]
+
                 key = key_in.get_key()
                 if key == "up":
                     row_offset = max(0, row_offset - 1)
@@ -488,26 +341,15 @@ def main():
                 elif key == "exit":
                     break
 
-                # Controllo periodico delle scadenze (aeromobili non piu' visti)
                 remove_old()
 
-                # 3. Rendering dinamico e intelligente:
-                #    - se l'utente preme un tasto, aggiornamento ISTANTANEO
-                #      (massima reattivita');
-                #    - se arrivano nuovi dati, aggiornamento a intervalli
-                #      regolari (evita sfarfallii).
-                should_update = key_pressed or (
-                    data_received and (now - last_ui_update > ui_update_interval)
-                )
-                if should_update:
-                    ui_grid, row_offset = build_ui(
-                        console.size.width, console.size.height, row_offset
-                    )
+                # Refresh della TUI (pacing controllato a 100ms per stabilità grafica)
+                if key_pressed or (data_received and (now - last_ui_update > ui_update_interval)):
+                    ui_grid, row_offset = build_ui(console.size.width, console.size.height, row_offset)
                     live.update(ui_grid)
                     live.refresh()
                     last_ui_update = now
 
-                # 4. Sleep minimo per non consumare il 100% della CPU se inattivo
                 if not raw and not key:
                     time.sleep(0.01)
 
@@ -516,4 +358,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nTerminato.")
+        pass

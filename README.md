@@ -7,35 +7,106 @@
 ---
 
 <a id="italiano"></a>
-# 🇮🇹 ADS‑B over LoRa — Heltec LoRa 32 V3 (v2.1)
+# IT - ADS‑B over LoRa — Heltec LoRa 32 V3 (v3.0)
 
-![Version](https://img.shields.io/badge/Version-2.1-red)
+![Version](https://img.shields.io/badge/Version-3.0-red)
 ![Platform](https://img.shields.io/badge/ESP32-Heltec%20V3-blue)
 ![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
 ![Band](https://img.shields.io/badge/868%20MHz-EU-orange)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
 
-### Trasmissione a lunga distanza di dati ADS‑B / Mode‑S tramite LoRa con schede Heltec ESP32
+### Trasmissione ad alta frequenza e lunga distanza di dati ADS‑B / Mode‑S tramite LoRa con schede Heltec ESP32
+
+---
 
 ### Panoramica
 
-Questo progetto implementa un bridge completo ADS‑B → LoRa → ADS‑B pensato per collegamenti radio a lunga distanza e bassa larghezza di banda.
+Questo progetto implementa un bridge completo ADS‑B → LoRa → ADS‑B ottimizzato per canali radio a banda stretta e alta frequenza di aggiornamento. 
 
-I messaggi degli aeromobili decodificati da readsb (o dump1090) vengono acquisiti dal flusso SBS‑1 / BaseStation TCP sulla porta 30003, compressi in un protocollo binario compatto, trasmessi tramite un collegamento LoRa 868 MHz usando due schede Heltec LoRa 32 V3 (ESP32 + SX1262) e ricostruiti sul lato ricevente per una visualizzazione in tempo reale.
+I messaggi degli aeromobili decodificati da `readsb` (o `dump1090`) vengono catturati dal flusso TCP SBS-1 sulla porta 30003, analizzati e filtrati da un **Motore Semantico** a livello software, compressi in un protocollo binario proprietario compatto, trasmessi via LoRa a 868 MHz tramite due schede Heltec LoRa 32 V3 e infine ricostruiti sul ricevitore per popolare una dashboard radar testuale (TUI) interattiva e ordinata per distanza.
 
-Il sistema è ottimizzato per:
+---
 
-* Efficienza di banda
-* Lunga portata
-* Bassa latenza
-* Monitoraggio visivo locale tramite display OLED integrato
-* Framing robusto e validazione dei pacchetti
+### 🚀 Architettura del Motore Semantico v3.0
+
+Il cuore del sistema è il **Motore Semantico ad Eventi** (*Semantic Engine*), sviluppato per superare i limiti di banda fisica del canale LoRa senza sacrificare la precisione della telemetria.
+
+```
++-------------------------------------------------------------------------+
+|                         MOTORE SEMANTICO (TX)                           |
++-------------------------------------------------------------------------+
+   | (SBS-1 TCP Stream)
+   v
+[Parser SBS-1] --------> [Database di Stato (ICAO Hex)]
+                               | (Confronto Delta e Soglie)
+                               v
+                         [Filtro Differenziale]
+                               |
+                               +---> No variazioni significative? -> SCARTA
+                               |
+                               +---> Variazione > Soglia? ---------> GENERA DELTA
+                               |
+                               +---> Evento di Stato (Squawk/Gnd) -> GENERA EVENT
+                               |
+                               +---> Timeout 5s raggiunto? --------> GENERA FULL
+                               |
+                               v
+                         [Dynamic Bitmasking]
+                               |
+                               v
+                         [Pre-compiled Struct Packing]
+                               | (Aggiunta Header & CRC16)
+                               v
+                         [Coda TX (deque, maxlen=20)] ---> Seriale USB -> LoRa
+```
+
+#### 1. Analisi Differenziale e Macchina a Stati
+Invece di operare come semplice pass-through, lo script `tx.py` mantiene in memoria una macchina a stati per ogni indirizzo ICAO rilevato. Il motore semantico valuta le derivate fisiche dei seguenti parametri rispetto all'ultimo invio validato:
+* **Quota (ALT):** Variazioni superiori a $\ge 50$ piedi.
+* **Velocità (VEL):** Variazioni superiori a $\ge 5$ nodi.
+* **Direzione (DIR):** Variazioni superiori a $\ge 3$ gradi.
+* **Coordinate (LAT/LON):** Spostamenti superiori a $\ge 0.002$ gradi (circa 220 metri).
+* **Rateo Verticale (VER):** Variazioni superiori a $\ge 150$ piedi/minuto.
+
+#### 2. Dynamic Bitmasking (Mascheramento Dinamico)
+Se un parametro non supera la soglia di variazione, viene omesso dalla serializzazione. Il sistema genera dinamicamente una maschera di bit a 16 bit (*Bitmask*) inserita nell'header del pacchetto. Ogni bit indica la presenza o l'assenza di uno specifico campo nel payload binario. Questo consente di ridurre la dimensione del frame dai ~130 byte del testo SBS-1 originale a soli **18-40 byte** in formato compresso (riduzione dell'overhead del 70-80%).
+
+#### 3. Gestione dei Frame di Sincronizzazione (FULL) ed Eventi (EVENT)
+* **Frame DELTA:** Contiene solo i parametri fisici che hanno superato le soglie di tolleranza.
+* **Frame EVENT:** Generato istantaneamente in caso di variazione di parametri discreti e critici come il codice *Squawk* o lo stato al suolo (*Ground State*).
+* **Frame FULL (Heartbeat):** Trasmesso periodicamente (ogni 5 secondi per configurazione Demo ad alta frequenza) per inviare lo stato completo del velivolo. Questo garantisce che eventuali ricevitori sintonizzati in un secondo momento possano ricostruire la telemetria completa in pochi istanti.
+
+---
+
+### ⚡ Ottimizzazioni Prestazionali v3.0
+
+La versione 3.0 introduce interventi strutturali volti a garantire la massima fluidità e stabilità del sistema con flussi di traffico aereo intensi:
+
+* **Pre-compilazione delle Strutture Binarie (`struct.Struct`):** La compilazione delle stringhe di formato di `struct.pack` e `struct.unpack` è stata spostata al di fuori dei loop critici di ricezione e trasmissione. L'uso di istanze `struct.Struct` pre-allocate evita il parsing ripetuto dei template binari, riducendo sensibilmente l'uso di CPU.
+* **Coda Asincrona a Finestra Scorrevole (`deque`):** Per evitare la congestione del buffer seriale del microcontrollore Heltec durante picchi di traffico, il trasmettitore utilizza una coda asincrona `collections.deque(maxlen=20)`. Se la frequenza di generazione dei frame supera la capacità fisica di trasmissione della radio (cadenzata a 50ms di delay minimo), i pacchetti obsoleti vengono scartati automaticamente a favore di quelli più recenti.
+* **Sincronizzazione e Scarto Selettivo:** In caso di corruzione di un pacchetto sulla seriale in ricezione (`rx.py`), il parser scarta unicamente il marcatore di sincronizzazione `0x55AA` corrente e riallinea immediatamente il puntatore del buffer ai byte successivi, minimizzando la perdita di pacchetti adiacenti.
+* **Protezione RAM del Ricevitore:** Il buffer di ricezione seriale è limitato rigidamente a un massimo di 4096 byte per prevenire l'accumulo di byte di rumore (garbage) e preservare la memoria di sistema in esecuzioni prolungate.
+
+---
+
+### 📡 Algoritmo di Tracciamento Radar e Distanza (Haversine)
+
+Il ricevitore `rx.py` include l'implementazione in virgola mobile della formula di Haversine per determinare la distanza ortodromica in tempo reale tra ciascun velivolo rilevato e le coordinate geografiche della stazione di terra (`HOME_LAT`, `HOME_LON`):
+
+$$\Delta\sigma = 2 \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta\phi}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\Delta\lambda}{2}\right)}\right)$$
+
+$$d = R \cdot \Delta\sigma$$
+
+#### Caratteristiche:
+* **Ordinamento Dinamico per Distanza:** La griglia grafica ordina costantemente i velivoli posizionando i più vicini in cima. I velivoli privi di coordinate GPS valide vengono collocati in coda alla lista in ordine alfabetico ICAO.
+* **Nessun Effetto Flashing (Layout Stabile):** L'ordinamento degli aeromobili impedisce il riposizionamento caotico delle card sulla TUI, mantenendo l'interfaccia stabile e leggibile.
+* **Pacing Grafico:** L'interfaccia Rich Live si aggiorna a intervalli controllati di 100ms per la telemetria ordinaria, reagendo istantaneamente (latenza <10ms) agli input da tastiera per lo scorrimento dei bersagli.
 
 ---
 
 ### Novità Firmware v2.1: Monitoraggio OLED & Interattività
 
-La versione **2.1** del firmware sfrutta il display OLED integrato (SSD1306, 128x64) e il pulsante utente **PRG** (GPIO 0) di Heltec V3. È stato implementato un sistema a **3 pagine** consultabili in tempo reale.
+La versione **2.1** del firmware (pienamente compatibile con il backend Python v3.0) sfrutta il display OLED integrato (SSD1306, 128x64) e il pulsante utente **PRG** (GPIO 0) di Heltec V3. È stato implementato un sistema a **3 pagine** consultabili in tempo reale.
 
 #### Funzionalità Display sul Ricevitore (RX):
 * **Pagina 0 (Live Monitor):** Mostra il numero totale di pacchetti ricevuti, l'RSSI e l'SNR dell'ultimo pacchetto, e la dimensione del payload.
@@ -73,19 +144,19 @@ Ricevitore RTL‑SDR
         ↓ 
 readsb (TCP 127.0.0.1:30003)
         ↓
-python/tx/tx.py (parsing + serializzazione compatta)
+python/tx/tx.py (Motore Semantico + Serializzazione Compatta Precompilata)
         ↓ 
 Seriale USB (115200 bps)
         ↓
 Heltec LoRa 32 V3 (TX)  ← [OLED: Stato TX / Configurazione]
         ↓
-LoRa 868 MHz
+LoRa 868 MHz (No Duty-Cycle Limit / Demo Mode)
         ↓
 Heltec LoRa 32 V3 (RX)  ← [OLED: Live Monitor / Grafico RSSI / Configurazione]
         ↓
 Seriale USB (115200 bps)
         ↓
-python/rx/rx.py (decodifica + dashboard)
+python/rx/rx.py (Decodifica Veloce + Calcolo Distanza + Dashboard Ordinata)
 ```
 
 ---
@@ -127,10 +198,6 @@ Sostituisci:
 
 Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:30003`, che è esattamente la porta utilizzata dallo script python.
 
-### Utilizzo di un GPS
-
-Le coordinate del ricevitore possono essere inserite manualmente nel comando precedente, ma è possibile anche utilizzare un modulo GPS collegato al Raspberry Pi o al PC Linux. In quel caso le coordinate possono essere recuperate automaticamente e passate a readsb.
-
 ---
 
 ### Perché comprimere i dati ADS‑B?
@@ -143,7 +210,7 @@ Esempio di messaggio:
 
 Dimensione tipica: 100–140 byte
 
-Con LoRa a SF7 / BW125 kHz / CR4:5 il throughput utile è di pochi kbit/s, quindi trasmettere il testo completo sarebbe estremamente inefficiente.
+Con LoRa a SF7 / BW125 kHz / CR4:5 il throughput utile è limitato, quindi trasmettere il testo completo sarebbe estremamente inefficiente.
 
 ### Strategia di compressione
 
@@ -189,15 +256,7 @@ Configurazione predefinita nel firmware:
 | Coding Rate      | 4/5       |
 | Potenza TX       | 14 dBm    |
 
-
-### Compromessi
-
-| Modifica | Effetto                                 |
-| -------- | --------------------------------------- |
-| SF ↑     | Maggiore portata, minore throughput     |
-| BW ↑     | Maggiore throughput, minore sensibilità |
-| CR ↑     | Maggiore robustezza, maggiore airtime   |
-
+---
 
 ### Mappatura pin Heltec V3
 
@@ -222,35 +281,20 @@ La configurazione dei pin include sia il modulo LoRa SX1262, sia la gestione del
 ### `python/tx/tx.py`
 
 Responsabilità:
-* Connessione socket a `127.0.0.1:30003` (flusso readsb)
-* Parsing dei messaggi SBS-1 testuali
-* Selezione ed estrazione dei campi validi
-* Serializzazione binaria compatta tramite `struct.pack`
-* Calcolo del CRC16 di verifica
-* Invio dei frame tramite connessione seriale alla scheda Heltec TX
+* Connessione socket non bloccante a `127.0.0.1:30003` (flusso readsb)
+* Macchina a stati ed estrazione differenziale dei parametri (Motore Semantico)
+* Serializzazione rapida ad alte prestazioni via pre-compilazione di strutture binarie
+* Calcolo del CRC16 di verifica globale (Header + Payload)
+* Accodamento a finestra asincrona (`deque`) e svuotamento con ritardo controllato sulla seriale della scheda Heltec TX
 
 ### `python/rx/rx.py`
 
 Responsabilità:
-* Lettura non bloccante della seriale della scheda Heltec RX
-* Sincronizzazione sul marker di inizio frame `0x55AA`
-* Validazione del checksum CRC16
-* Decodifica del payload binario compatto
-* Mantenimento e aggiornamento in tempo reale del database interno degli aeromobili
-* Rimozione automatica dei velivoli non più attivi (timeout di 150 secondi)
-* Rendering grafico della dashboard nel terminale con aggiornamento reattivo (libreria Rich)
-
-
-### Dashboard in tempo reale
-
-La dashboard è disegnata per adattarsi in tempo reale al vostro terminale, disponendo le informazioni in una comoda vista a griglia auto-impaginata.
-
-Funzionalità incluse:
-* Una scheda informativa compatta per ogni velivolo tracciato
-* Layout a griglia auto-adattivo alla larghezza della finestra
-* Timer "last seen" aggiornato costantemente
-* Gestione dello scorrimento verticale (tramite tasti Freccia o tasti `W`/`S`) per visualizzare decine di aerei contemporaneamente
-* Refresh intelligente ed estremamente reattivo per evitare sfarfallii dello schermo
+* Lettura non bloccante a 115200 bps e riallineamento istantaneo del buffer su marcatore `0x55AA`
+* Validazione asincrona del checksum CRC16
+* Decodifica tramite strutture binarie ottimizzate pre-allocate
+* Calcolo della distanza geografica e ordinamento progressivo dei bersagli
+* Rendering asincrono della dashboard grafica Rich Live con gestione adattiva dei terminali e dello scorrimento verticale
 
 ---
 
@@ -307,46 +351,111 @@ cd python/tx
 python3 tx.py
 ```
 
-Le prestazioni generali possono variare in base al rumore elettromagnetico circostante, alla vicinanza tra i nodi, alla potenza impostata e alla velocità di elaborazione della porta seriale USB.
-
 <br><br>
 
 ---
 
 <a id="english"></a>
-# 🇬🇧 ADS‑B over LoRa — Heltec LoRa 32 V3 (v2.1)
+# EN - ADS‑B over LoRa — Heltec LoRa 32 V3 (v3.0)
 
-![Version](https://img.shields.io/badge/Version-2.1-red)
+![Version](https://img.shields.io/badge/Version-3.0-red)
 ![Platform](https://img.shields.io/badge/ESP32-Heltec%20V3-blue)
 ![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
 ![Band](https://img.shields.io/badge/868%20MHz-EU-orange)
 ![Python](https://img.shields.io/badge/Python-3.10+-yellow)
 
-<div align="center">
-  <a href="#italiano">↑ Back to Italian</a>
-</div>
+### High-frequency and long-range transmission of ADS-B / Mode-S data via LoRa with Heltec ESP32 boards
 
-### Long-range transmission of ADS-B / Mode-S data via LoRa with Heltec ESP32 boards
+---
 
 ### Overview
 
-This project implements a complete ADS‑B → LoRa → ADS‑B bridge designed for long-range, low-bandwidth radio links.
+This project implements a complete ADS‑B → LoRa → ADS‑B bridge optimized for narrow-bandwidth radio channels with high update rates.
 
-Aircraft messages decoded by readsb (or dump1090) are acquired from the SBS‑1 / BaseStation TCP stream on port 30003, compressed into a compact binary protocol, transmitted over an 868 MHz LoRa link using two Heltec LoRa 32 V3 boards (ESP32 + SX1262), and reconstructed on the receiving side for real-time visualization.
+Aircraft messages decoded by `readsb` (or `dump1090`) are captured from the TCP SBS-1 stream on port 30003, analyzed and filtered by a software-level **Semantic Engine**, compressed into a compact proprietary binary protocol, transmitted over an 868 MHz LoRa link using two Heltec LoRa 32 V3 boards, and finally reconstructed on the receiver side to populate an interactive text-based radar TUI ordered by distance.
 
-The system is optimized for:
+---
 
-* Bandwidth efficiency
-* Long range
-* Low latency
-* Local visual monitoring via integrated OLED display
-* Robust framing and packet validation
+### 🚀 Semantic Engine v3.0 Architecture
+
+At the core of the system is the **Event-Driven Semantic Engine**, designed to bypass the physical bandwidth constraints of LoRa channels without sacrificing telemetry precision.
+
+```
++-------------------------------------------------------------------------+
+|                         SEMANTIC ENGINE (TX)                            |
++-------------------------------------------------------------------------+
+   | (SBS-1 TCP Stream)
+   v
+[SBS-1 Parser] --------> [State Database (ICAO Hex)]
+                               | (Delta & Threshold Comparison)
+                               v
+                         [Differential Filter]
+                               |
+                               +---> No meaningful change? -> DISCARD
+                               |
+                               +---> Change > Threshold? ----> GENERATE DELTA
+                               |
+                               +---> State Event (Squawk/Gnd)-> GENERATE EVENT
+                               |
+                               +---> 5s Timeout reached? -----> GENERATE FULL
+                               |
+                               v
+                         [Dynamic Bitmasking]
+                               |
+                               v
+                         [Pre-compiled Struct Packing]
+                               | (Header & CRC16 generation)
+                               v
+                         [TX Queue (deque, maxlen=20)] ---> USB Serial -> LoRa
+```
+
+#### 1. Differential Analysis and State Machine
+Instead of acting as a simple passthrough, the `tx.py` script maintains a state machine for each detected ICAO hex address. The semantic engine evaluates the physical derivatives of the following parameters compared to the last validated transmission:
+* **Altitude (ALT):** Variations greater than $\ge 50$ feet.
+* **Speed (VEL):** Variations greater than $\ge 5$ knots.
+* **Heading (DIR):** Variations greater than $\ge 3$ degrees.
+* **Coordinates (LAT/LON):** Displacements greater than $\ge 0.002$ degrees (approx. 220 meters).
+* **Vertical Rate (VER):** Variations greater than $\ge 150$ feet/minute.
+
+#### 2. Dynamic Bitmasking
+If a parameter does not exceed its delta threshold, it is omitted from the serialization process entirely. The system dynamically generates a 16-bit field presence mask (*Bitmask*) embedded in the packet header. Each bit indicates the presence or absence of a specific field in the binary payload. This technique shrinks the typical frame size from the ~130 bytes of the original ASCII SBS-1 text down to only **18-40 bytes** in compressed format (reducing data overhead by 70-80%).
+
+#### 3. Sync Frame (FULL) and Event Frame (EVENT) Management
+* **DELTA Frame:** Contains only the physical parameters that have exceeded their delta threshold.
+* **EVENT Frame:** Generated instantaneously when discrete, critical parameters change (e.g., *Squawk* code or *Ground State*).
+* **FULL Frame (Heartbeat):** Transmitted periodically (every 5 seconds in high-frequency Demo configuration) to send the complete aircraft status. This ensures that any receivers powered on at a later time can reconstruct full aircraft telemetries within moments.
+
+---
+
+### ⚡ Performance Optimizations v3.0
+
+Version 3.0 introduces structural code updates aimed at maximizing system stability and throughput under heavy air-traffic scenarios:
+
+* **Pre-compiled Binary Structures (`struct.Struct`):** The formatting strings for `struct.pack` and `struct.unpack` have been pre-compiled outside the critical reception and transmission loops. Using pre-allocated `struct.Struct` instances avoids repeated parsing of binary templates, reducing CPU usage.
+* **Asynchronous Sliding Window Queue (`deque`):** To prevent congestion of the Heltec microcontroller serial buffer during traffic spikes, the transmitter uses a sliding window queue `collections.deque(maxlen=20)`. If the frame generation rate exceeds the physical LoRa transmission capacity (paced at a minimum 50ms delay), obsolete packets are automatically dropped in favor of the newest ones.
+* **Sync and Selective Discarding:** In case of packet corruption over the receiving serial line (`rx.py`), the parser discards only the current `0x55AA` sync marker and immediately realigns the buffer pointer to the subsequent bytes, minimizing adjacent packet loss.
+* **Receiver RAM Protection:** The serial receive buffer is rigidly capped at a maximum of 4096 bytes to prevent garbage accumulation and preserve system memory during long-term operations.
+
+---
+
+### 📡 Radar Tracking and Distance Algorithm (Haversine)
+
+The `rx.py` receiver features a floating-point implementation of the Haversine formula to compute real-time great-circle distances between each tracked aircraft and the ground receiver coordinates (`HOME_LAT`, `HOME_LON`):
+
+$$\Delta\sigma = 2 \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta\phi}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\Delta\lambda}{2}\right)}\right)$$
+
+$$d = R \cdot \Delta\sigma$$
+
+#### Features:
+* **Dynamic Sorting by Distance:** The UI grid constantly sorts aircraft, placing the nearest ones at the top. Aircraft lacking valid GPS coordinates are placed at the bottom of the list in alphabetical ICAO order.
+* **No Flashing Effects (Stable Layout):** Sorting prevent chaotic card rearranging on the TUI, keeping the interface stable and highly readable.
+* **Graphical Pacing:** The Rich Live interface updates at 100ms intervals for regular telemetry updates, responding instantly (<10ms latency) to keyboard inputs for vertical scrolling.
 
 ---
 
 ### Firmware Update v2.1: OLED Monitoring & Interactivity
 
-Version **2.1** of the firmware takes full advantage of the built-in OLED display (SSD1306, 128x64) and the user **PRG** button (GPIO 0) on the Heltec V3. A real-time **3-page** system has been implemented.
+Version **2.1** of the firmware (fully compatible with the Python v3.0 backend) takes advantage of the built-in OLED display (SSD1306, 128x64) and the user **PRG** button (GPIO 0) on the Heltec V3. A real-time **3-page** system has been implemented.
 
 #### Display Features on Receiver (RX):
 * **Page 0 (Live Monitor):** Shows the total number of received packets, RSSI and SNR of the last packet, and payload size.
@@ -384,19 +493,19 @@ RTL‑SDR Receiver
         ↓ 
 readsb (TCP 127.0.0.1:30003)
         ↓
-python/tx/tx.py (parsing + compact serialization)
+python/tx/tx.py (Semantic Engine + Compact Pre-compiled Serialization)
         ↓ 
 USB Serial (115200 bps)
         ↓
 Heltec LoRa 32 V3 (TX)  ← [OLED: TX Status / Configuration]
         ↓
-LoRa 868 MHz
+LoRa 868 MHz (No Duty-Cycle Limit / Demo Mode)
         ↓
 Heltec LoRa 32 V3 (RX)  ← [OLED: Live Monitor / RSSI Graph / Configuration]
         ↓
 USB Serial (115200 bps)
         ↓
-python/rx/rx.py (decoding + dashboard)
+python/rx/rx.py (Fast Decode + Distance Calculation + Sorted Dashboard)
 ```
 
 ---
@@ -438,10 +547,6 @@ Replace:
 
 With this setup, the SBS-1 stream will be available on `127.0.0.1:30003`, which is the exact port used by the Python script.
 
-### Using a GPS
-
-Receiver coordinates can be manually entered into the previous command, but you can also use a GPS module connected to your Raspberry Pi or Linux PC. In that case, coordinates can be retrieved automatically and passed to readsb.
-
 ---
 
 ### Why compress ADS-B data?
@@ -454,7 +559,7 @@ Example message:
 
 Typical size: 100–140 bytes
 
-With LoRa set to SF7 / BW125 kHz / CR4:5, the useful throughput is only a few kbit/s, making the transmission of raw text extremely inefficient.
+With LoRa set to SF7 / BW125 kHz / CR4:5, the useful throughput is limited, making the transmission of raw text extremely inefficient.
 
 ### Compression Strategy
 
@@ -500,15 +605,7 @@ Default configuration in the firmware:
 | Coding Rate      | 4/5       |
 | TX Power         | 14 dBm    |
 
-
-### Trade-offs
-
-| Change   | Effect                                     |
-| -------- | ------------------------------------------ |
-| SF ↑     | Longer range, lower throughput             |
-| BW ↑     | Higher throughput, lower sensitivity       |
-| CR ↑     | Greater robustness, longer airtime         |
-
+---
 
 ### Heltec V3 Pin Mapping
 
@@ -533,35 +630,20 @@ The pin configuration includes the SX1262 LoRa module, OLED management, and hard
 ### `python/tx/tx.py`
 
 Responsibilities:
-* Socket connection to `127.0.0.1:30003` (readsb stream)
-* Parsing of text-based SBS-1 messages
-* Selection and extraction of valid fields
-* Compact binary serialization via `struct.pack`
-* CRC16 checksum calculation
-* Sending frames via serial connection to the Heltec TX board
+* Non-blocking socket connection to `127.0.0.1:30003` (readsb stream)
+* State-machine comparison and differential parameter extraction (Semantic Engine)
+* Pre-compiled fast binary structures serialization
+* Header + Payload CRC16 checksum calculation
+* Sliding window queueing (`deque`) and serial output pacing to Heltec TX board
 
 ### `python/rx/rx.py`
 
 Responsibilities:
-* Non-blocking reading of the Heltec RX board serial port
-* Synchronization on the `0x55AA` start frame marker
-* CRC16 checksum validation
-* Decoding of the compact binary payload
-* Maintenance and real-time updating of the internal aircraft database
-* Automatic removal of inactive aircraft (150-second timeout)
-* Graphical dashboard rendering in the terminal with reactive updates (Rich library)
-
-
-### Real-time Dashboard
-
-The dashboard is designed to adapt in real-time to your terminal, displaying information in a convenient auto-paginated grid view.
-
-Features include:
-* A compact information card for every tracked aircraft
-* Grid layout that auto-adapts to window width
-* Constantly updated "last seen" timer
-* Vertical scroll handling (via Arrow keys or `W`/`S` keys) to view dozens of aircraft simultaneously
-* Smart and highly reactive refresh to prevent screen flickering
+* Non-blocking serial read at 115200 bps and instant buffer synchronization on `0x55AA` marker
+* Asynchronous checksum CRC16 validation
+* Fast decoding via pre-allocated and optimized binary structures
+* Great-circle distance calculations and progressive target sorting (closest at the top)
+* Asynchronous rendering of Rich Live graphical TUI with adaptative terminal handling and scroll features
 
 ---
 
@@ -617,5 +699,3 @@ Open another terminal on the machine connected to the SDR and start the transmis
 cd python/tx
 python3 tx.py
 ```
-
-Overall performance may vary depending on surrounding electromagnetic noise, node proximity, set transmission power, and the processing speed of the USB serial port.
