@@ -1,4 +1,11 @@
-### ADS‑B over LoRa — Heltec LoRa 32 V3
+<div align="center">
+  <a href="#italiano">🇮🇹 Italiano</a> | <a href="#english">🇬🇧 English</a>
+</div>
+
+---
+
+<a id="italiano"></a>
+# 🇮🇹 ADS‑B over LoRa — Heltec LoRa 32 V3
 
 ![Platform](https://img.shields.io/badge/ESP32-Heltec%20V3-blue)
 ![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
@@ -119,9 +126,7 @@ Con questa configurazione il flusso SBS‑1 sarà disponibile su `127.0.0.1:3000
 
 ### Utilizzo di un GPS
 
-Le coordinate del ricevitore possono essere inserite manualmente nel comando precedente, ma è possibile anche utilizzare un modulo GPS collegato al Raspberry Pi o al PC Linux.
-
-In quel caso le coordinate possono essere recuperate automaticamente e passate a readsb.
+Le coordinate del ricevitore possono essere inserite manualmente nel comando precedente, ma è possibile anche utilizzare un modulo GPS collegato al Raspberry Pi o al PC Linux. In quel caso le coordinate possono essere recuperate automaticamente e passate a readsb.
 
 ---
 
@@ -271,7 +276,7 @@ Responsabilità:
 
 La dashboard è disegnata per adattarsi in tempo reale al vostro terminale, disponendo le informazioni in una comoda vista a griglia auto-impaginata.
 
-Funcionalità incluse:
+Funzionalità incluse:
 * Una scheda informativa compatta per ogni velivolo tracciato
 * Layout a griglia auto-adattivo alla larghezza della finestra
 * Timer "last seen" aggiornato costantemente
@@ -334,3 +339,347 @@ python3 transmit.py
 ```
 
 Le prestazioni generali possono variare in base al rumore elettromagnetico circostante, alla vicinanza tra i nodi, alla potenza impostata e alla velocità di elaborazione della porta seriale USB.
+
+<br><br>
+
+---
+
+<a id="english"></a>
+# 🇬🇧 ADS‑B over LoRa — Heltec LoRa 32 V3
+
+![Platform](https://img.shields.io/badge/ESP32-Heltec%20V3-blue)
+![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
+![Band](https://img.shields.io/badge/868%20MHz-EU-orange)
+![Python](https://img.shields.io/badge/Python-3.10+-yellow)
+
+<div align="center">
+  <a href="#italiano">↑ Back to Italian</a>
+</div>
+
+### Long-range transmission of ADS-B / Mode-S data via LoRa with Heltec ESP32 boards
+
+### Overview
+
+This project implements a complete ADS‑B → LoRa → ADS‑B bridge designed for long-range, low-bandwidth radio links.
+
+Aircraft messages decoded by readsb (or dump1090) are acquired from the SBS‑1 / BaseStation TCP stream on port 30003, compressed into a compact binary protocol, transmitted over an 868 MHz LoRa link using two Heltec LoRa 32 V3 boards (ESP32 + SX1262), and reconstructed on the receiving side for real-time visualization.
+
+The system is optimized for:
+
+* Bandwidth efficiency
+* Long range
+* Low latency
+* Local visual monitoring via integrated OLED display
+* Robust framing and packet validation
+
+---
+
+### Firmware Update: OLED Monitoring & Interactivity
+
+The firmware has been extended to take full advantage of the built-in OLED display (SSD1306, 128x64) and the user **PRG** button (GPIO 0) on the Heltec V3. A real-time **3-page** system has been implemented.
+
+#### Display Features on Receiver (RX):
+* **Page 0 (Live Monitor):** Shows the total number of received packets, RSSI and SNR of the last packet, and payload size.
+* **Page 1 (RSSI History):** A Cartesian graph plotting the signal strength (RSSI) of the last 20 received packets, with a dynamic scale from -120 to -40 dBm.
+* **Page 2 (Configuration):** Displays current radio parameters (Frequency, Spreading Factor, Bandwidth, Coding Rate).
+
+#### Display Features on Transmitter (TX):
+* **Page 0 (TX Dashboard):** Shows the successful transmission count, the size of the last frame, and the status/error code of the SX1262 chip.
+* **Page 1 (Serial Status):** Monitors the serial parser state (syncing phase on the `0x55AA` marker, bytes received vs expected).
+* **Page 2 (Configuration):** Summary of radio parameters and transmission power (14 dBm).
+
+#### Hardware Screenshot Capture:
+By holding down the **PRG** button for more than 2 seconds, the ESP32 performs a dump of the screen memory (1024 bytes of frame buffer) and sends it over serial, protected by `---START_SCREENSHOT---` and `---END_SCREENSHOT---` tags. This allows you to save the exact Heltec screen directly to your PC as a `.png` file.
+
+---
+
+### OLED Screenshot Gallery (Heltec V3)
+
+Below are the three monitoring screens available on the receiver's (RX) OLED, captured directly using the built-in screenshot feature.
+
+<p align="center">
+  <img src="screenshots/page0_monitor.png" width="30%" alt="Page 0 - Live Monitor" />
+  <img src="screenshots/page1_graph.png" width="30%" alt="Page 1 - RSSI History Graph" />
+  <img src="screenshots/page2_config.png" width="30%" alt="Page 2 - Radio Configuration" />
+</p>
+
+---
+
+### Data Flow
+
+```
+Aircraft (ADS‑B 1090 MHz)
+        ↓ 
+RTL‑SDR Receiver
+        ↓ 
+readsb (TCP 127.0.0.1:30003)
+        ↓
+Version (V1 or V2)/TX/transmit.py (parsing + compact serialization)
+        ↓ 
+USB Serial (115200 bps)
+        ↓
+Heltec LoRa 32 V3 (TX)  ← [OLED: TX Status / Configuration]
+        ↓
+LoRa 868 MHz
+        ↓
+Heltec LoRa 32 V3 (RX)  ← [OLED: Live Monitor / RSSI Graph / Configuration]
+        ↓
+USB Serial (115200 bps)
+        ↓
+Version (V1 or V2)/RX/recv.py (decoding + dashboard)
+```
+
+---
+
+### Why use readsb instead of dump1090?
+
+Although the project works with dump1090, using readsb is highly recommended.
+
+### Advantages
+
+* Better handling of Mode‑S and ADS‑B messages
+* More accurate decoding
+* Better performance with a high number of aircraft
+* More stable network output
+* More active development and maintenance compared to dump1090
+
+In real-world scenarios with heavy traffic, readsb generally produces more valid messages with fewer losses.
+
+### Configuring readsb for SBS output on port 30003
+
+Start readsb with the following command:
+
+```bash
+sudo readsb \
+  --device-type rtlsdr \
+  --device 0 \
+  --gain auto \
+  --lat <RECEIVER_LAT> \
+  --lon <RECEIVER_LON> \
+  --net \
+  --net-bind-address 127.0.0.1 \
+  --net-sbs-port 30003
+```
+
+Replace:
+
+* `<RECEIVER_LAT>` with your receiver's latitude (e.g., `41.130000`)
+* `<RECEIVER_LON>` with your receiver's longitude (e.g., `13.022000`)
+
+With this setup, the SBS-1 stream will be available on `127.0.0.1:30003`, which is the exact port used by the Python script.
+
+### Using a GPS
+
+Receiver coordinates can be manually entered into the previous command, but you can also use a GPS module connected to your Raspberry Pi or Linux PC. In that case, coordinates can be retrieved automatically and passed to readsb.
+
+---
+
+### Why compress ADS-B data?
+
+The SBS-1 format is text-based (ASCII) and contains a lot of redundancy.
+
+Example message:
+
+`MSG,3,111,11111,4CA123,111111,2026/08/02,10:15:21.123,2026/08/02,10:15:21.123,RYR8AB,37000,450,182,44.54,11.29,-64,0,0,0,0`
+
+Typical size: 100–140 bytes
+
+With LoRa set to SF7 / BW125 kHz / CR4:5, the useful throughput is only a few kbit/s, making the transmission of raw text extremely inefficient.
+
+### Compression Strategy
+
+* Field presence bitmask
+* Typed binary fields (`struct.pack`)
+* Fixed-length Callsign encoding
+* Complete removal of CSV delimiters
+* Integrity check via CRC16
+
+### Typical Results
+
+| Format           | Size       |
+| ---------------- | ---------- |
+| Original SBS‑1   | 90–140 B   |
+| Compact Binary   | 18–40 B    |
+| Size Reduction   | 65–80%     |
+
+---
+
+### Hardware
+
+### Transmitter and Receiver
+
+* 2 × Heltec LoRa 32 V3 (ESP32-S3 + SX1262)
+* USB‑C cable connection
+
+### ADS‑B Station
+
+* Raspberry Pi or Linux PC
+* RTL‑SDR USB Dongle
+* Omnidirectional antenna tuned to 1090 MHz
+* readsb (recommended) or dump1090
+
+### LoRa Configuration
+
+Default configuration in the firmware:
+
+| Parameter        | Value     |
+| ---------------- | --------- |
+| Frequency        | 868.0 MHz |
+| Spreading Factor | 7         |
+| Bandwidth        | 125 kHz   |
+| Coding Rate      | 4/5       |
+| TX Power         | 14 dBm    |
+
+
+### Trade-offs
+
+| Change   | Effect                                     |
+| -------- | ------------------------------------------ |
+| SF ↑     | Longer range, lower throughput             |
+| BW ↑     | Higher throughput, lower sensitivity       |
+| CR ↑     | Greater robustness, longer airtime         |
+
+
+### Heltec V3 Pin Mapping
+
+The pin configuration includes the SX1262 LoRa module, OLED management, and hardware controls:
+
+| Signal  | GPIO | Description |
+| ------- | ---- | ----------- |
+| **CS**  | 8    | SPI Chip Select (LoRa) |
+| **DIO1**| 14   | Interrupt Pin (LoRa) |
+| **RST** | 12   | Reset Pin (LoRa) |
+| **BUSY**| 13   | Busy Status Pin (LoRa) |
+| **SDA** | 17   | I2C Data (OLED) |
+| **SCL** | 18   | I2C Clock (OLED) |
+| **OLED RST** | 21| Reset (OLED) |
+| **Vext**| 36   | Display Power (LOW = ON) |
+| **PRG** | 0    | User / Boot Button (LOW = Pressed) |
+
+---
+
+### Compact Binary Protocol
+
+### Frame Structure
+| Field | Bytes | Description |
+|------|------|-------------|
+| `SYNC` | 2 | Synchronization bytes (`0x55AA`) |
+| `SEQ` | 2 | Progressive packet sequence number |
+| `MASK` | 2 | Field presence bitmask |
+| `LEN` | 1 | Payload length |
+| `PAYLOAD` | N | Serialized data |
+| `CRC16` | 2 | Integrity check | 
+
+### Field Map (MASK)
+
+Data is transmitted dynamically: only fields actually populated in the original SBS message are included in the binary payload, activating the corresponding bit in the mask.
+
+| Bit | Field | Format | Type | Description / Unit |
+| :---: | --- | :---: | :---: | --- |
+| **0** | ICAO | `<I` | `uint32` | Unique transponder ID (Hex) |
+| **1** | Callsign | `8s` | `char[8]` | Flight ID (8 ASCII characters) |
+| **2** | Altitude | `<H` | `uint16` | Altitude in feet (ft) |
+| **3** | Speed | `<H` | `uint16` | Ground speed in knots (kt) |
+| **4** | Heading | `<H` | `uint16` | Heading/Track in degrees (0–359°) |
+| **5** | Latitude | `<i` | `int32` | Scaled geographic coordinate (value $\times 10^7$) |
+| **6** | Longitude | `<i` | `int32` | Scaled geographic coordinate (value $\times 10^7$) |
+| **7** | Vertical Rate | `<h` | `int16` | Vertical speed in feet per minute (fpm) |
+| **8** | Squawk | `<H` | `uint16` | 4-digit octal transponder code (e.g., `7700`) |
+| **9** | Ground | `<B` | `uint8` | Ground state: `1` (GND), `0` (AIR) |
+| **10** | Type | `<B` | `uint8` | Aircraft category/type |
+
+---
+
+### Software Components
+
+The project is divided into two main versions (`V1` and `V2`). It is highly recommended to use the **`V2`** folder, which contains the latest performance optimizations and smooth packet handling.
+
+### `TX/transmit.py`
+
+Responsibilities:
+* Socket connection to `127.0.0.1:30003` (readsb stream)
+* Parsing of text-based SBS-1 messages
+* Selection and extraction of valid fields
+* Compact binary serialization via `struct.pack`
+* CRC16 checksum calculation
+* Sending frames via serial connection to the Heltec TX board
+
+### `RX/recv.py`
+
+Responsibilities:
+* Non-blocking reading of the Heltec RX board serial port
+* Synchronization on the `0x55AA` start frame marker
+* CRC16 checksum validation
+* Decoding of the compact binary payload
+* Maintenance and real-time updating of the internal aircraft database
+* Automatic removal of inactive aircraft (150-second timeout)
+* Graphical dashboard rendering in the terminal with reactive updates (Rich library)
+
+
+### Real-time Dashboard
+
+The dashboard is designed to adapt in real-time to your terminal, displaying information in a convenient auto-paginated grid view.
+
+Features include:
+* A compact information card for every tracked aircraft
+* Grid layout that auto-adapts to window width
+* Constantly updated "last seen" timer
+* Vertical scroll handling (via Arrow keys or `W`/`S` keys) to view dozens of aircraft simultaneously
+* Smart and highly reactive refresh to prevent screen flickering
+
+---
+
+### Installation
+
+### 1. Install readsb
+
+On Debian-based systems or Raspberry Pi OS:
+
+```bash
+sudo apt update
+sudo apt install readsb
+```
+
+### 2. Clone the repository
+
+```bash
+git clone https://github.com/StringLess80/Heltec-LoRa-32-RF-Data-Transmission.git
+cd Heltec-LoRa-32-RF-Data-Transmission
+```
+
+### 3. Install Python dependencies
+
+Install the required libraries via pip (using a virtual environment `venv` is recommended):
+
+```bash
+pip install pyserial rich
+```
+
+### 4. Flash the Heltec boards
+
+1. Open the Arduino IDE and install the board support packages for **ESP32** (Heltec) along with the **RadioLib** and **U8g2** libraries from the Library Manager.
+2. Connect the boards and upload the respective firmware:
+   * Upload `V2/TX/transmitter/transmitter.ino` to the transmitting Heltec board.
+   * Upload `V2/RX/receiver/receiver.ino` to the receiving Heltec board.
+
+### System Startup
+
+### 1. Start the receiver (Display side)
+
+Navigate to the chosen version directory and run the receiving script:
+
+```bash
+cd V2/RX
+python3 recv.py
+```
+
+### 2. Start the transmitter (RTL-SDR side)
+
+Open another terminal on the machine connected to the SDR and start the transmission script:
+
+```bash
+cd V2/TX
+python3 transmit.py
+```
+
+Overall performance may vary depending on surrounding electromagnetic noise, node proximity, set transmission power, and the processing speed of the USB serial port.
