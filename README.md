@@ -1,3 +1,5 @@
+***
+
 <div align="center">
   <a href="#italiano">🇮🇹 Italiano</a> | <a href="#english">🇬🇧 English</a>
 </div>
@@ -5,8 +7,9 @@
 ---
 
 <a id="italiano"></a>
-# 🇮🇹 ADS‑B over LoRa — Heltec LoRa 32 V3
+# 🇮🇹 ADS‑B over LoRa — Heltec LoRa 32 V3 (v2.1)
 
+![Version](https://img.shields.io/badge/Version-2.1-red)
 ![Platform](https://img.shields.io/badge/ESP32-Heltec%20V3-blue)
 ![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
 ![Band](https://img.shields.io/badge/868%20MHz-EU-orange)
@@ -30,9 +33,9 @@ Il sistema è ottimizzato per:
 
 ---
 
-### Novità Firmware: Monitoraggio OLED & Interattività
+### Novità Firmware v2.1: Monitoraggio OLED & Interattività
 
-Il firmware è stato esteso per sfruttare il display OLED integrato (SSD1306, 128x64) e il pulsante utente **PRG** (GPIO 0) di Heltec V3. È stato implementato un sistema a **3 pagine** consultabili in tempo reale.
+La versione **2.1** del firmware sfrutta il display OLED integrato (SSD1306, 128x64) e il pulsante utente **PRG** (GPIO 0) di Heltec V3. È stato implementato un sistema a **3 pagine** consultabili in tempo reale.
 
 #### Funzionalità Display sul Ricevitore (RX):
 * **Pagina 0 (Live Monitor):** Mostra il numero totale di pacchetti ricevuti, l'RSSI e l'SNR dell'ultimo pacchetto, e la dimensione del payload.
@@ -70,7 +73,7 @@ Ricevitore RTL‑SDR
         ↓ 
 readsb (TCP 127.0.0.1:30003)
         ↓
-Versione (V1 o V2)/TX/transmit.py (parsing + serializzazione compatta)
+python/tx/tx.py (parsing + serializzazione compatta)
         ↓ 
 Seriale USB (115200 bps)
         ↓
@@ -82,7 +85,7 @@ Heltec LoRa 32 V3 (RX)  ← [OLED: Live Monitor / Grafico RSSI / Configurazione]
         ↓
 Seriale USB (115200 bps)
         ↓
-Versione (V1 o V2)/RX/recv.py (decodifica + dashboard)
+python/rx/rx.py (decodifica + dashboard)
 ```
 
 ---
@@ -214,43 +217,9 @@ La configurazione dei pin include sia il modulo LoRa SX1262, sia la gestione del
 
 ---
 
-### Protocollo binario compatto
-
-### Struttura del frame
-| Campo | Byte | Descrizione |
-|------|------|-------------|
-| `SYNC` | 2 | Byte di sincronizzazione (`0x55AA`) |
-| `SEQ` | 2 | Numero di sequenza progressivo del pacchetto |
-| `MASK` | 2 | Bitmask di presenza dei campi |
-| `LEN` | 1 | Lunghezza del payload |
-| `PAYLOAD` | N | Dati serializzati |
-| `CRC16` | 2 | Controllo di integrità | 
-
-### Mappa dei campi (MASK)
-
-I dati vengono trasmessi in modo dinamico: solo i campi realmente popolati nel messaggio SBS originale vengono inseriti nel payload binario, attivando il relativo bit nella maschera.
-
-| Bit | Campo | Formato | Tipo | Descrizione / Unità di misura |
-| :---: | --- | :---: | :---: | --- |
-| **0** | ICAO | `<I` | `uint32` | Identificativo univoco del transponder (Hex) |
-| **1** | Callsign | `8s` | `char[8]` | Identificativo del volo (8 caratteri ASCII) |
-| **2** | Quota (Altitude) | `<H` | `uint16` | Altitudine in piedi (ft) |
-| **3** | Velocità (Speed) | `<H` | `uint16` | Velocità al suolo in nodi (kt) |
-| **4** | Rotta (Heading) | `<H` | `uint16` | Prua/Rotta in gradi (0–359°) |
-| **5** | Latitudine | `<i` | `int32` | Coordinata geografica scalata (valore $\times 10^7$) |
-| **6** | Longitudine | `<i` | `int32` | Coordinata geografica scalata (valore $\times 10^7$) |
-| **7** | Rateo verticale | `<h` | `int16` | Vertical Speed in piedi al minuto (fpm) |
-| **8** | Squawk | `<H` | `uint16` | Codice transponder a 4 cifre ottali (es. `7700`) |
-| **9** | Ground | `<B` | `uint8` | Stato al suolo: `1` (GND), `0` (AIR) |
-| **10** | Type | `<B` | `uint8` | Categoria/tipo del velivolo |
-
----
-
 ### Componenti software
 
-Il progetto è suddiviso in due versioni principali (`V1` e `V2`). Si consiglia di utilizzare la cartella **`V2`** che contiene le ottimizzazioni di performance più recenti e la gestione fluida dei pacchetti.
-
-### `TX/transmit.py`
+### `python/tx/tx.py`
 
 Responsabilità:
 * Connessione socket a `127.0.0.1:30003` (flusso readsb)
@@ -260,7 +229,7 @@ Responsabilità:
 * Calcolo del CRC16 di verifica
 * Invio dei frame tramite connessione seriale alla scheda Heltec TX
 
-### `RX/recv.py`
+### `python/rx/rx.py`
 
 Responsabilità:
 * Lettura non bloccante della seriale della scheda Heltec RX
@@ -308,25 +277,25 @@ cd Heltec-LoRa-32-RF-Data-Transmission
 Installare le librerie necessarie tramite pip (si consiglia l'utilizzo di un ambiente virtuale `venv`):
 
 ```bash
-pip install pyserial rich
+pip install -r requirements.txt
 ```
 
 ### 4. Flashare le schede Heltec
 
 1. Apri l'Arduino IDE e installa i pacchetti di supporto per schede **ESP32** (Heltec) e le librerie **RadioLib** e **U8g2** dal Gestore Librerie.
 2. Collega le schede e carica i rispettivi firmware:
-   * Carica `V2/TX/transmitter/transmitter.ino` sulla scheda Heltec trasmittente.
-   * Carica `V2/RX/receiver/receiver.ino` sulla scheda Heltec ricevente.
+   * Carica `firmware/tx/tx.ino` sulla scheda Heltec trasmittente.
+   * Carica `firmware/rx/rx.ino` sulla scheda Heltec ricevente.
 
 ### Avvio del sistema
 
 ### 1. Avviare il ricevitore (lato visualizzazione)
 
-Spostati nella directory della versione scelta ed esegui lo script di ricezione:
+Spostati nella directory degli script ed esegui lo script di ricezione:
 
 ```bash
-cd V2/RX
-python3 recv.py
+cd python/rx
+python3 rx.py
 ```
 
 ### 2. Avviare il trasmettitore (lato RTL‑SDR)
@@ -334,8 +303,8 @@ python3 recv.py
 Apri un altro terminale sulla macchina connessa all'SDR e avvia lo script di trasmissione:
 
 ```bash
-cd V2/TX
-python3 transmit.py
+cd python/tx
+python3 tx.py
 ```
 
 Le prestazioni generali possono variare in base al rumore elettromagnetico circostante, alla vicinanza tra i nodi, alla potenza impostata e alla velocità di elaborazione della porta seriale USB.
@@ -345,8 +314,9 @@ Le prestazioni generali possono variare in base al rumore elettromagnetico circo
 ---
 
 <a id="english"></a>
-# 🇬🇧 ADS‑B over LoRa — Heltec LoRa 32 V3
+# 🇬🇧 ADS‑B over LoRa — Heltec LoRa 32 V3 (v2.1)
 
+![Version](https://img.shields.io/badge/Version-2.1-red)
 ![Platform](https://img.shields.io/badge/ESP32-Heltec%20V3-blue)
 ![Radio](https://img.shields.io/badge/LoRa-SX1262-green)
 ![Band](https://img.shields.io/badge/868%20MHz-EU-orange)
@@ -374,9 +344,9 @@ The system is optimized for:
 
 ---
 
-### Firmware Update: OLED Monitoring & Interactivity
+### Firmware Update v2.1: OLED Monitoring & Interactivity
 
-The firmware has been extended to take full advantage of the built-in OLED display (SSD1306, 128x64) and the user **PRG** button (GPIO 0) on the Heltec V3. A real-time **3-page** system has been implemented.
+Version **2.1** of the firmware takes full advantage of the built-in OLED display (SSD1306, 128x64) and the user **PRG** button (GPIO 0) on the Heltec V3. A real-time **3-page** system has been implemented.
 
 #### Display Features on Receiver (RX):
 * **Page 0 (Live Monitor):** Shows the total number of received packets, RSSI and SNR of the last packet, and payload size.
@@ -414,7 +384,7 @@ RTL‑SDR Receiver
         ↓ 
 readsb (TCP 127.0.0.1:30003)
         ↓
-Version (V1 or V2)/TX/transmit.py (parsing + compact serialization)
+python/tx/tx.py (parsing + compact serialization)
         ↓ 
 USB Serial (115200 bps)
         ↓
@@ -426,7 +396,7 @@ Heltec LoRa 32 V3 (RX)  ← [OLED: Live Monitor / RSSI Graph / Configuration]
         ↓
 USB Serial (115200 bps)
         ↓
-Version (V1 or V2)/RX/recv.py (decoding + dashboard)
+python/rx/rx.py (decoding + dashboard)
 ```
 
 ---
@@ -558,43 +528,9 @@ The pin configuration includes the SX1262 LoRa module, OLED management, and hard
 
 ---
 
-### Compact Binary Protocol
-
-### Frame Structure
-| Field | Bytes | Description |
-|------|------|-------------|
-| `SYNC` | 2 | Synchronization bytes (`0x55AA`) |
-| `SEQ` | 2 | Progressive packet sequence number |
-| `MASK` | 2 | Field presence bitmask |
-| `LEN` | 1 | Payload length |
-| `PAYLOAD` | N | Serialized data |
-| `CRC16` | 2 | Integrity check | 
-
-### Field Map (MASK)
-
-Data is transmitted dynamically: only fields actually populated in the original SBS message are included in the binary payload, activating the corresponding bit in the mask.
-
-| Bit | Field | Format | Type | Description / Unit |
-| :---: | --- | :---: | :---: | --- |
-| **0** | ICAO | `<I` | `uint32` | Unique transponder ID (Hex) |
-| **1** | Callsign | `8s` | `char[8]` | Flight ID (8 ASCII characters) |
-| **2** | Altitude | `<H` | `uint16` | Altitude in feet (ft) |
-| **3** | Speed | `<H` | `uint16` | Ground speed in knots (kt) |
-| **4** | Heading | `<H` | `uint16` | Heading/Track in degrees (0–359°) |
-| **5** | Latitude | `<i` | `int32` | Scaled geographic coordinate (value $\times 10^7$) |
-| **6** | Longitude | `<i` | `int32` | Scaled geographic coordinate (value $\times 10^7$) |
-| **7** | Vertical Rate | `<h` | `int16` | Vertical speed in feet per minute (fpm) |
-| **8** | Squawk | `<H` | `uint16` | 4-digit octal transponder code (e.g., `7700`) |
-| **9** | Ground | `<B` | `uint8` | Ground state: `1` (GND), `0` (AIR) |
-| **10** | Type | `<B` | `uint8` | Aircraft category/type |
-
----
-
 ### Software Components
 
-The project is divided into two main versions (`V1` and `V2`). It is highly recommended to use the **`V2`** folder, which contains the latest performance optimizations and smooth packet handling.
-
-### `TX/transmit.py`
+### `python/tx/tx.py`
 
 Responsibilities:
 * Socket connection to `127.0.0.1:30003` (readsb stream)
@@ -604,7 +540,7 @@ Responsibilities:
 * CRC16 checksum calculation
 * Sending frames via serial connection to the Heltec TX board
 
-### `RX/recv.py`
+### `python/rx/rx.py`
 
 Responsibilities:
 * Non-blocking reading of the Heltec RX board serial port
@@ -652,25 +588,25 @@ cd Heltec-LoRa-32-RF-Data-Transmission
 Install the required libraries via pip (using a virtual environment `venv` is recommended):
 
 ```bash
-pip install pyserial rich
+pip install -r requirements.txt
 ```
 
 ### 4. Flash the Heltec boards
 
 1. Open the Arduino IDE and install the board support packages for **ESP32** (Heltec) along with the **RadioLib** and **U8g2** libraries from the Library Manager.
 2. Connect the boards and upload the respective firmware:
-   * Upload `V2/TX/transmitter/transmitter.ino` to the transmitting Heltec board.
-   * Upload `V2/RX/receiver/receiver.ino` to the receiving Heltec board.
+   * Upload `firmware/tx/tx.ino` to the transmitting Heltec board.
+   * Upload `firmware/rx/rx.ino` to the receiving Heltec board.
 
 ### System Startup
 
 ### 1. Start the receiver (Display side)
 
-Navigate to the chosen version directory and run the receiving script:
+Navigate to the python scripts directory and run the receiving script:
 
 ```bash
-cd V2/RX
-python3 recv.py
+cd python/rx
+python3 rx.py
 ```
 
 ### 2. Start the transmitter (RTL-SDR side)
@@ -678,8 +614,8 @@ python3 recv.py
 Open another terminal on the machine connected to the SDR and start the transmission script:
 
 ```bash
-cd V2/TX
-python3 transmit.py
+cd python/tx
+python3 tx.py
 ```
 
 Overall performance may vary depending on surrounding electromagnetic noise, node proximity, set transmission power, and the processing speed of the USB serial port.
