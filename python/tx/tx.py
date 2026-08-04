@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ADS-B LoRa Semantic TX (Ottimizzato e Rapido)
+ADS-B LoRa Semantic TX
 ==============================================
 """
 

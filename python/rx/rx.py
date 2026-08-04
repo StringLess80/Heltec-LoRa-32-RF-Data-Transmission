@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ADS-B LoRa Radar Dashboard (Ottimizzato e Ordinato)
+ADS-B LoRa Radar Dashboard
 ===================================================
 """
 
