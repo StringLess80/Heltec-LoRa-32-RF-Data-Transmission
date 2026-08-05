@@ -72,7 +72,7 @@ Forzato ogni **`FULL_FRAME_INTERVAL` (5.0 secondi)** per consentire ai nuovi ric
 ### 2. Frame Differenziale (`DELTA`)
 Valutato ad una frequenza massima di **2Hz per aereo (`MIN_INTERVAL_PER_AIRCRAFT = 0.5s`)**. Un campo viene inserito nel payload **solamente se** la variazione rispetto all'ultimo valore inviato supera le soglie di tolleranza impostate:
 
-$$\Delta = |\text{Valore}_{\text{attuale}} - \text{Valore}_{\text{ultimo\_inviato}}| \ge \text{Soglia}$$
+$$\Delta = |\text{Valore}_{\text{attuale}} - \text{Valore}_{\text{ultimo-inviato}}| \ge \text{Soglia}$$
 
 #### Soglie Cinematch Default (`THRESHOLDS`)
 * **Altitudine (`ALT`):** $\ge 50 \text{ ft}$

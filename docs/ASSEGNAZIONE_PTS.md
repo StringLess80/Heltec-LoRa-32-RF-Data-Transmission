@@ -21,7 +21,7 @@ $$\Delta \lambda = \lambda_{st} - \lambda_{ac} \quad [\text{rad}]$$
 
 $$a = \sin^2\left(\frac{\Delta \phi}{2}\right) + \cos(\phi_{ac}) \cdot \cos(\phi_{st}) \cdot \sin^2\left(\frac{\Delta \lambda}{2}\right)$$
 
-$$c = 2 \cdot \operatorname{atan2}\left(\sqrt{a}, \sqrt{1-a}\right)$$
+$$c = 2 \cdot \text{atan2}\left(\sqrt{a}, \sqrt{1-a}\right)$$
 
 $$d_{ground} = R_E \cdot c \quad [\text{km}]$$
 
