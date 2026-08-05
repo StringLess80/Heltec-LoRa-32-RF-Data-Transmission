@@ -24,12 +24,14 @@ let gpsMarker = null;
 let localControllers = [];
 let currentSelectedIcao = null;
 let latestAircraftList = [];
+let latestSystemState = {};
 
 let hasAutoCenteredInit = false;
 let hasCenteredOnGPSFirstFix = false;
 let isTimeoutInputLoaded = false;
 
 let lastControllersJson = "";
+let lastFeedJson = "";
 let chartHistory = new Array(20).fill(0);
 
 const socket = io();
@@ -43,15 +45,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// APERTURA / CHIUSURA MODALE GUIDA COMANDI
-function openControlsGuideModal() {
-  document.getElementById('modal-controls-guide').style.display = 'flex';
-}
-function closeControlsGuideModal() {
-  document.getElementById('modal-controls-guide').style.display = 'none';
-}
+// ESPOSIZIONE GLOBALE FUNZIONI MODALE GUIDA
+window.openControlsGuideModal = function() {
+  const modal = document.getElementById('modal-controls-guide');
+  if (modal) modal.style.display = 'flex';
+};
 
-// SWITCH MODALITÀ 2D / 3D CON PARTE INIZIALE DALL'ALTO (-90°)
+window.closeControlsGuideModal = function() {
+  const modal = document.getElementById('modal-controls-guide');
+  if (modal) modal.style.display = 'none';
+};
+
+// SWITCH MODALITÀ 2D / 3D CON PERPENDICOLARE DALL'ALTO (-90°)
 async function switchMapMode(mode) {
   currentMapMode = mode;
   localStorage.setItem('tactical_map_mode', mode);
@@ -88,12 +93,11 @@ async function switchMapMode(mode) {
     }
 
     if (cesiumViewer) {
-      // VISTA PERPENDICOLARE DALL'ALTO (PITCH -90)
       cesiumViewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, 35000.0),
         orientation: {
           heading: Cesium.Math.toRadians(0.0),
-          pitch: Cesium.Math.toRadians(-90.0), // Dall'alto
+          pitch: Cesium.Math.toRadians(-90.0), // Perpendicolare dall'alto
           roll: 0.0
         },
         duration: 1.2
@@ -145,7 +149,7 @@ function snapCameraToLocation() {
       destination: Cesium.Cartesian3.fromDegrees(targetLon, targetLat, 25000.0),
       orientation: {
         heading: Cesium.Math.toRadians(0.0),
-        pitch: Cesium.Math.toRadians(-90.0), // Perpendicolare dall'alto
+        pitch: Cesium.Math.toRadians(-90.0),
         roll: 0.0
       },
       duration: 1.2
@@ -153,10 +157,7 @@ function snapCameraToLocation() {
   }
 }
 
-// Variabile globale per stato di sistema
-let latestSystemState = {};
-
-// INIZIALIZZAZIONE GLOBO 3D CON BLOCCO DI FISICA SUB-TERRENO
+// INIZIALIZZAZIONE GLOBO 3D CON MAPPA VETTORIALE HD E CONTROLLI FISICI TELECAMERA
 async function initCesium3DGlobe() {
   Cesium.Ion.defaultAccessToken = '';
 
@@ -175,11 +176,10 @@ async function initCesium3DGlobe() {
     skyAtmosphere: false
   });
 
-  // CONTROLLI FISICI TELECAMERA (Impedisce di finire sotto terra o sottosopra)
   const controller = cesiumViewer.scene.screenSpaceCameraController;
-  controller.minimumZoomDistance = 500.0;        // Quota minima di sicurezza 500 metri dal suolo
-  controller.enableCollisionDetection = true;    // Attiva la collisione rigida con la terra
-  controller.minimumPitchAmount = Cesium.Math.toRadians(-88.0); // Impedisce alla telecamera di capovolgersi
+  controller.minimumZoomDistance = 500.0;
+  controller.enableCollisionDetection = true;
+  controller.minimumPitchAmount = Cesium.Math.toRadians(-88.0);
   controller.maximumPitchAmount = Cesium.Math.toRadians(-5.0);
 
   try {
@@ -216,18 +216,89 @@ async function initCesium3DGlobe() {
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 }
 
-// Salva lo stato di sistema nella callback websocket
-socket.on('telemetry_update', (data) => {
-  latestSystemState = data.system || {};
-  // ... resto del codice websocket esistente ...
-});
+// TOGGLE PRESET STINGER AUTOMATICO
+function toggleStingerPreset(isStinger) {
+  const nameInput = document.getElementById('m-ctrl-name');
+  const zenithInput = document.getElementById('m-ctrl-zenith');
+  const radiusInput = document.getElementById('m-ctrl-radius');
+  const heightInput = document.getElementById('m-ctrl-height');
+  const minRangeInput = document.getElementById('m-ctrl-min-range');
 
-// RENDER CONTROLLORI TATTICI E CONI ZENITH 3D
+  if (isStinger) {
+    if (nameInput) nameInput.value = "STINGER_UNIT_ALPHA";
+    if (zenithInput) zenithInput.value = "30";   // Limite elevazione 60°
+    if (radiusInput) radiusInput.value = "8.0";  // 8.0km Slant Range
+    if (heightInput) heightInput.value = "3.8";  // 3.8km Tetto Operativo
+    if (minRangeInput) minRangeInput.value = "0.2"; // 200m Arming range
+  } else {
+    if (nameInput) nameInput.value = "CTRL_TOWER_NORTH";
+    if (zenithInput) zenithInput.value = "30";
+    if (radiusInput) radiusInput.value = "40.0";
+    if (heightInput) heightInput.value = "12.0";
+    if (minRangeInput) minRangeInput.value = "0.0";
+  }
+}
+
+// COPIA COORDINATE DAL GPS REALE O PUNTO NOTO NELLA MODALE
+function copyGPSToControllerModal() {
+  let lat = null;
+  let lon = null;
+
+  if (latestSystemState?.gps?.connected && latestSystemState?.gps?.lat && latestSystemState?.gps?.lon) {
+    lat = latestSystemState.gps.lat;
+    lon = latestSystemState.gps.lon;
+  } else {
+    const refLat = parseFloat(document.getElementById('input-ref-lat')?.value);
+    const refLon = parseFloat(document.getElementById('input-ref-lon')?.value);
+    if (!isNaN(refLat) && !isNaN(refLon)) {
+      lat = refLat;
+      lon = refLon;
+    }
+  }
+
+  if (lat && lon) {
+    document.getElementById('m-ctrl-lat').value = lat.toFixed(5);
+    document.getElementById('m-ctrl-lon').value = lon.toFixed(5);
+  } else {
+    alert("Nessun dato GPS o Punto Noto disponibile al momento!");
+  }
+}
+
+// INVIO COMPLETO PARAMETRI TATTICI CONTROLLORE / STINGER
+function submitAddController() {
+  const isStinger = document.getElementById('m-ctrl-is-stinger')?.checked || false;
+  const name = document.getElementById('m-ctrl-name').value || (isStinger ? "STINGER_UNIT_ALPHA" : "CTRL_TOWER");
+  const lat = parseFloat(document.getElementById('m-ctrl-lat').value);
+  const lon = parseFloat(document.getElementById('m-ctrl-lon').value);
+  const zenith_blind_angle = parseFloat(document.getElementById('m-ctrl-zenith').value) || 30.0;
+  const radius_km = parseFloat(document.getElementById('m-ctrl-radius').value) || (isStinger ? 8.0 : 40.0);
+  const cone_height_km = parseFloat(document.getElementById('m-ctrl-height').value) || (isStinger ? 3.8 : 12.0);
+  const min_range_km = parseFloat(document.getElementById('m-ctrl-min-range').value) || (isStinger ? 0.2 : 0.0);
+
+  lastControllersJson = "";
+
+  fetch('/api/add_controller', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      lat,
+      lon,
+      unit_type: isStinger ? 'MANPADS_STINGER' : 'RADAR_TOWER',
+      zenith_blind_angle,
+      radius_km,
+      cone_height_km,
+      min_range_km
+    })
+  }).then(r => r.json()).then(d => closeAddControllerModal());
+}
+
+// RENDER CONTROLLORI TATTICI E CONO CIECO ROVESCIATO FIM-92 STINGER
 function renderControllers(controllers) {
   const container = document.getElementById('controllers-container');
   if (!container) return;
 
-  const currentJson = JSON.stringify((controllers || []).map(c => `${c.id}_${c.name}_${c.zenith_blind_angle}_${c.radius_km}`));
+  const currentJson = JSON.stringify((controllers || []).map(c => `${c.id}_${c.name}_${c.zenith_blind_angle}_${c.radius_km}_${c.cone_height_km}`));
   if (currentJson === lastControllersJson) return;
   lastControllersJson = currentJson;
 
@@ -240,63 +311,75 @@ function renderControllers(controllers) {
 
   controllers.forEach(ctrl => {
     const zenithAngle = ctrl.zenith_blind_angle || 30;
+    const coneHeightKm = ctrl.cone_height_km || 3.8;
+    const coneHeightMeters = coneHeightKm * 1000.0;
+
     container.innerHTML += `
       <div class="glass-card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
-          <div style="font-weight: 600; font-size: 14px;">${ctrl.name}</div>
+          <div style="font-weight: 600; font-size: 14px;">🚀 ${ctrl.name}</div>
           <button onclick="event.stopPropagation(); deleteController('${ctrl.id}')" style="border:none; background:none; color:var(--accent-red); cursor:pointer; font-weight:700; padding:4px 8px; font-size:16px; pointer-events:auto;" title="Elimina Controllore">✕</button>
         </div>
         <div class="data-row"><span class="data-label">Cono Zenith</span><span class="data-value">± ${zenithAngle}°</span></div>
-        <div class="data-row"><span class="data-label">Raggio Op.</span><span class="data-value">${ctrl.radius_km} km</span></div>
+        <div class="data-row"><span class="data-label">Tetto Cono</span><span class="data-value">${coneHeightKm} km</span></div>
+        <div class="data-row"><span class="data-label">Slant Range</span><span class="data-value">${ctrl.radius_km} km</span></div>
       </div>
     `;
 
-    // 2D LEAFLET RENDER
+    // 1. 2D LEAFLET
     if (!controllerMarkers[ctrl.id]) {
-      controllerMarkers[ctrl.id] = L.circleMarker([ctrl.lat, ctrl.lon], { color: '#007aff', fillColor: '#007aff', fillOpacity: 0.9, radius: 8 }).addTo(map).bindTooltip(ctrl.name, { permanent: true, direction: 'top' });
+      controllerMarkers[ctrl.id] = L.circleMarker([ctrl.lat, ctrl.lon], { color: '#007aff', fillColor: '#007aff', fillOpacity: 0.9, radius: 8 }).addTo(map).bindTooltip(`🚀 Stinger: ${ctrl.name}`, { permanent: true, direction: 'top' });
     } else {
       controllerMarkers[ctrl.id].setLatLng([ctrl.lat, ctrl.lon]);
     }
 
-    const radiusGroundMeters = 3000.0 * Math.tan(zenithAngle * Math.PI / 180.0);
+    const radiusGround2D = (coneHeightMeters * 0.8) * Math.tan(zenithAngle * Math.PI / 180.0);
     if (blindConeCircles[ctrl.id]) map.removeLayer(blindConeCircles[ctrl.id]);
-    blindConeCircles[ctrl.id] = L.circle([ctrl.lat, ctrl.lon], { radius: radiusGroundMeters, color: '#ff9500', fillColor: '#ff9500', fillOpacity: 0.15, weight: 1.5, dashArray: '3, 3' }).addTo(map);
+    blindConeCircles[ctrl.id] = L.circle([ctrl.lat, ctrl.lon], {
+      radius: radiusGround2D,
+      color: '#ff9500',
+      fillColor: '#ff9500',
+      fillOpacity: 0.18,
+      weight: 1.8,
+      dashArray: '4, 4'
+    }).addTo(map);
 
-    // 3D CESIUM RENDER (TORRI E CONI ZENITH 3D)
+    // 2. 3D CESIUM (VERTICE A TERRA QUOTA ZERO)
     if (cesiumViewer) {
       if (!cesiumEntities.controllers[ctrl.id]) {
         cesiumEntities.controllers[ctrl.id] = cesiumViewer.entities.add({
           position: Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, 0),
           point: { pixelSize: 12, color: Cesium.Color.fromCssColorString('#007aff'), outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
           label: {
-            text: `🏰 ${ctrl.name}`,
+            text: `🚀 ${ctrl.name}`,
             font: 'bold 12px sans-serif',
             fillColor: Cesium.Color.fromCssColorString('#007aff'),
             outlineColor: Cesium.Color.WHITE,
             outlineWidth: 3,
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            pixelOffset: new Cesium.Cartesian2(0, -20)
+            pixelOffset: new Cesium.Cartesian2(0, -22)
           }
         });
       } else {
         cesiumEntities.controllers[ctrl.id].position = Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, 0);
       }
 
-      // Cono Cieco Zenith 3D invertito (altezza fino a 12km)
-      const coneHeightMeters = 20000.0;
       const topRadiusMeters = coneHeightMeters * Math.tan(zenithAngle * Math.PI / 180.0);
+      const coneCenterPosition = Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, coneHeightMeters / 2.0);
 
-      if (cesiumEntities.blindCones[ctrl.id]) cesiumViewer.entities.remove(cesiumEntities.blindCones[ctrl.id]);
+      if (cesiumEntities.blindCones[ctrl.id]) {
+        cesiumViewer.entities.remove(cesiumEntities.blindCones[ctrl.id]);
+      }
       
       cesiumEntities.blindCones[ctrl.id] = cesiumViewer.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, coneHeightMeters / 2.0),
+        position: coneCenterPosition,
         cylinder: {
           length: coneHeightMeters,
           topRadius: topRadiusMeters,
           bottomRadius: 0.0,
-          material: Cesium.Color.fromCssColorString('#ff9500').withAlpha(0.25),
+          material: Cesium.Color.fromCssColorString('#ff9500').withAlpha(0.22),
           outline: true,
-          outlineColor: Cesium.Color.fromCssColorString('#ff9500').withAlpha(0.7)
+          outlineColor: Cesium.Color.fromCssColorString('#ff9500').withAlpha(0.75)
         }
       });
     }
@@ -318,54 +401,6 @@ function deselectAircraft() {
   });
   renderAircraftFeed(latestAircraftList);
   
-  if (currentMapMode === '3D') renderAircraft3D(latestAircraftList, localControllers);
-}
-
-function selectAircraft(ac) {
-  currentSelectedIcao = ac.icao;
-  
-  const callsign = ac.current_data[10] || ac.icao;
-  const alt = ac.current_data[11] || '0';
-  const speed = ac.current_data[12] || '0';
-  const heading = ac.current_data[13] || '0';
-  const vrate = ac.current_data[16] || '0';
-
-  document.getElementById('target-focus-card').innerHTML = `
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-      <div>
-        <div style="font-size: 20px; font-weight: 700; color: var(--accent-purple);">${callsign}</div>
-        <div style="font-size: 12px; color: var(--text-sub);">ICAO: ${ac.icao}</div>
-      </div>
-      <span class="status-badge" style="background: rgba(175, 82, 222, 0.2); color: var(--accent-purple);">SELEZIONATO</span>
-    </div>
-    <div class="data-row"><span class="data-label">Altitudine</span><span class="data-value">${alt} ft</span></div>
-    <div class="data-row"><span class="data-label">Ground Speed</span><span class="data-value">${speed} kts</span></div>
-    <div class="data-row"><span class="data-label">Heading</span><span class="data-value">${heading}°</span></div>
-    <div class="data-row"><span class="data-label">Vertical Rate</span><span class="data-value">${vrate} ft/m</span></div>
-    <div class="data-row"><span class="data-label">Assegnazione</span><span class="data-value" style="color: var(--accent-blue);">${ac.assigned_ctrl || 'Nessuno'}</span></div>
-  `;
-
-  const lat = parseFloat(ac.current_data[14]);
-  const lon = parseFloat(ac.current_data[15]);
-  const altMeters = parseFloat(alt) * 0.3048;
-
-  if (lat && lon) {
-    if (currentMapMode === '2D') {
-      map.panTo([lat, lon]);
-    } else if (cesiumViewer) {
-      cesiumViewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(lon, lat - 0.05, Math.max(altMeters + 5000, 8000)),
-        orientation: {
-          heading: Cesium.Math.toRadians(0.0),
-          pitch: Cesium.Math.toRadians(-30.0),
-          roll: 0.0
-        },
-        duration: 1.2
-      });
-    }
-  }
-
-  renderAircraftFeed(latestAircraftList);
   if (currentMapMode === '3D') renderAircraft3D(latestAircraftList, localControllers);
 }
 
@@ -441,6 +476,7 @@ fetchCleanSerialPorts();
 socket.on('telemetry_update', (data) => {
   const sys = data.system || {};
   const aircraft = data.aircraft || [];
+  latestSystemState = sys;
   latestAircraftList = aircraft;
 
   if (!hasAutoCenteredInit) {
@@ -535,41 +571,6 @@ function updateTxButtonUI(isActive) {
 
 function toggleTX() { fetch('/api/toggle_tx', { method: 'POST' }); }
 
-function renderAircraftFeed(aircraftList) {
-  const container = document.getElementById('aircraft-feed-container');
-  const countEl = document.getElementById('ac-count');
-  if (!container) return;
-
-  countEl.innerText = aircraftList.length;
-
-  if (aircraftList.length === 0) {
-    container.innerHTML = '<div style="font-size: 12px; color: var(--text-sub); text-align: center; padding: 12px;">Nessun aereo rilevato</div>';
-    return;
-  }
-
-  let html = '';
-  aircraftList.forEach(ac => {
-    const callsign = ac.current_data[10] || ac.icao;
-    const alt = ac.current_data[11] || '0';
-    const speed = ac.current_data[12] || '0';
-    const isSelected = ac.icao === currentSelectedIcao;
-
-    html += `
-      <div class="glass-card clickable-item ${isSelected ? 'selected-item' : ''}" onclick="event.stopPropagation(); selectAircraftByIcao('${ac.icao}')">
-        <div style="display:flex; justify-content:space-between; font-weight:700; font-size:13px;">
-          <span>✈ ${callsign}</span>
-          <span style="font-family:var(--font-mono); font-weight:600;">${alt} ft</span>
-        </div>
-        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-sub); margin-top:4px;">
-          <span>Speed: ${speed} kts</span>
-          <span>Ctrl: ${ac.assigned_ctrl || 'Nessuno'}</span>
-        </div>
-      </div>
-    `;
-  });
-  container.innerHTML = html;
-}
-
 function selectAircraftByIcao(icao) {
   const ac = latestAircraftList.find(a => a.icao === icao);
   if (ac) selectAircraft(ac);
@@ -649,22 +650,6 @@ function disconnectHeltec() {
 
 function openAddControllerModal() { document.getElementById('modal-add-controller').style.display = 'flex'; }
 function closeAddControllerModal() { document.getElementById('modal-add-controller').style.display = 'none'; }
-
-function submitAddController() {
-  const name = document.getElementById('m-ctrl-name').value;
-  const lat = parseFloat(document.getElementById('m-ctrl-lat').value);
-  const lon = parseFloat(document.getElementById('m-ctrl-lon').value);
-  const zenith_blind_angle = parseFloat(document.getElementById('m-ctrl-zenith').value);
-  const radius_km = parseFloat(document.getElementById('m-ctrl-radius').value);
-
-  lastControllersJson = "";
-
-  fetch('/api/add_controller', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, lat, lon, zenith_blind_angle, radius_km })
-  }).then(r => r.json()).then(d => closeAddControllerModal());
-}
 
 function deleteController(id) {
   lastControllersJson = "";
@@ -791,29 +776,115 @@ function renderAircraft2D(aircraftList, controllers) {
   });
 }
 
-// RENDER AEREI 3D CON MODELLINO LOW-POLY, ROTAZIONE HEADING E VETTORE TRATTEGGIATO
+// SELEZIONE TARGET SENZA RIMBALZI CON AGGIORNAMENTO FEED
+function selectAircraft(ac) {
+  currentSelectedIcao = ac.icao;
+  
+  const callsign = ac.current_data[10] || ac.icao;
+  const alt = ac.current_data[11] || '0';
+  const speed = ac.current_data[12] || '0';
+  const heading = ac.current_data[13] || '0';
+  const vrate = ac.current_data[16] || '0';
+
+  document.getElementById('target-focus-card').innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+      <div>
+        <div style="font-size: 20px; font-weight: 700; color: var(--accent-purple);">${callsign}</div>
+        <div style="font-size: 12px; color: var(--text-sub);">ICAO: ${ac.icao}</div>
+      </div>
+      <span class="status-badge" style="background: rgba(175, 82, 222, 0.2); color: var(--accent-purple);">SELEZIONATO</span>
+    </div>
+    <div class="data-row"><span class="data-label">Altitudine</span><span class="data-value">${alt} ft</span></div>
+    <div class="data-row"><span class="data-label">Ground Speed</span><span class="data-value">${speed} kts</span></div>
+    <div class="data-row"><span class="data-label">Heading</span><span class="data-value">${heading}°</span></div>
+    <div class="data-row"><span class="data-label">Vertical Rate</span><span class="data-value">${vrate} ft/m</span></div>
+    <div class="data-row"><span class="data-label">Assegnazione</span><span class="data-value" style="color: var(--accent-blue);">${ac.assigned_ctrl || 'Nessuno'}</span></div>
+  `;
+
+  const lat = parseFloat(ac.current_data[14]);
+  const lon = parseFloat(ac.current_data[15]);
+  const altMeters = parseFloat(alt) * 0.3048;
+
+  if (lat && lon) {
+    if (currentMapMode === '2D') {
+      map.panTo([lat, lon]);
+    } else if (cesiumViewer) {
+      cesiumViewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, Math.max(altMeters + 10000, 15000)),
+        orientation: {
+          heading: Cesium.Math.toRadians(0.0),
+          pitch: Cesium.Math.toRadians(-90.0),
+          roll: 0.0
+        },
+        duration: 1.2
+      });
+    }
+  }
+
+  lastFeedJson = "";
+  renderAircraftFeed(latestAircraftList);
+  renderAircraft(latestAircraftList, localControllers);
+}
+
+// RENDER FEED AEREI CON CACHE DIFFING (ZERO FLICKER / ZERO RIMBALZI MID-CLICK)
+function renderAircraftFeed(aircraftList) {
+  const container = document.getElementById('aircraft-feed-container');
+  const countEl = document.getElementById('ac-count');
+  if (!container) return;
+
+  if (countEl) countEl.innerText = aircraftList.length;
+
+  if (aircraftList.length === 0) {
+    container.innerHTML = '<div style="font-size: 12px; color: var(--text-sub); text-align: center; padding: 12px;">Nessun aereo rilevato</div>';
+    lastFeedJson = "";
+    return;
+  }
+
+  const currentFeedJson = JSON.stringify(aircraftList.map(a => `${a.icao}_${a.current_data[10]}_${a.current_data[11]}_${a.current_data[12]}_${a.assigned_ctrl}_${a.icao === currentSelectedIcao}`));
+  
+  if (currentFeedJson === lastFeedJson) {
+    return;
+  }
+  lastFeedJson = currentFeedJson;
+
+  let html = '';
+  aircraftList.forEach(ac => {
+    const callsign = ac.current_data[10] || ac.icao;
+    const alt = ac.current_data[11] || '0';
+    const speed = ac.current_data[12] || '0';
+    const isSelected = ac.icao === currentSelectedIcao;
+
+    html += `
+      <div class="glass-card clickable-item ${isSelected ? 'selected-item' : ''}" onclick="event.stopPropagation(); selectAircraftByIcao('${ac.icao}')">
+        <div style="display:flex; justify-content:space-between; font-weight:700; font-size:13px;">
+          <span>✈ ${callsign}</span>
+          <span style="font-family:var(--font-mono); font-weight:600;">${alt} ft</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-sub); margin-top:4px;">
+          <span>Speed: ${speed} kts</span>
+          <span>Ctrl: ${ac.assigned_ctrl || 'Nessuno'}</span>
+        </div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+}
+
 function renderAircraft3D(aircraftList, controllers) {
   if (!cesiumViewer) return;
-
-  // Pulizia vettori e drop lines dinamiche
-  Object.keys(cesiumEntities.dropLines).forEach(k => { cesiumViewer.entities.remove(cesiumEntities.dropLines[k]); });
-  Object.keys(cesiumEntities.assignmentLines).forEach(k => { cesiumViewer.entities.remove(cesiumEntities.assignmentLines[k]); });
-  cesiumEntities.dropLines = {};
-  cesiumEntities.assignmentLines = {};
 
   aircraftList.forEach(ac => {
     const lat = parseFloat(ac.current_data[14]);
     const lon = parseFloat(ac.current_data[15]);
     const altFeet = parseFloat(ac.current_data[11] || 0);
     const heading = parseFloat(ac.current_data[13] || 0);
-    const altMeters = altFeet * 0.3048; // Piedi -> Metri MSL
+    const altMeters = altFeet * 0.3048;
     if (!lat || !lon) return;
 
     const callsign = ac.current_data[10] || ac.icao;
     const isBlind = ac.in_blind_cone;
     const isSelected = ac.icao === currentSelectedIcao;
 
-    // Colore Dinamico: Blu (#007aff), Arancione (#ff9500 in cono), Viola Neon (#af52de se selezionato)
     let colorHex = isBlind ? '#ff9500' : '#007aff';
     if (isSelected) colorHex = '#af52de';
     const cesiumColor = Cesium.Color.fromCssColorString(colorHex);
@@ -821,20 +892,27 @@ function renderAircraft3D(aircraftList, controllers) {
     const position3D = Cesium.Cartesian3.fromDegrees(lon, lat, altMeters);
     const groundPosition3D = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
 
-    // CALCOLO ORIENTAMENTO 3D HEADING (Rotazione della prua dell'aereo)
     const headingRad = Cesium.Math.toRadians(heading);
-    const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
+    const modelHeadingOffset = Cesium.Math.toRadians(-90.0);
+    const modelPitchOffset   = Cesium.Math.toRadians(90.0);
+    const modelRollOffset    = Cesium.Math.toRadians(-90.0);
+    
+    const hpr = new Cesium.HeadingPitchRoll(
+      headingRad + modelHeadingOffset,
+      modelPitchOffset,
+      modelRollOffset
+    );
     const orientation = Cesium.Transforms.headingPitchRollQuaternion(position3D, hpr);
 
-    // MODELLINO AERO 3D LOW-POLY
+    // 1. UPDATE O CREA MODELLINO AEREO 3D (DIMENSIONE RIDOTTA A 22px)
     if (!cesiumEntities.aircraft[ac.icao]) {
       const entity = cesiumViewer.entities.add({
         position: position3D,
         orientation: orientation,
         model: {
-          uri: '/static/assets/11803_Airplane_v1_l1.glb', // Modello 3D convertito
-          minimumPixelSize: 32,
-          maximumScale: 400,
+          uri: '/static/assets/11803_Airplane_v1_l1.glb',
+          minimumPixelSize: 22, // Ridotta dimensione minimia
+          maximumScale: 200,    // Ridotta scala massima
           color: cesiumColor,
           colorBlendMode: Cesium.ColorBlendMode.MIX,
           colorBlendAmount: 0.75
@@ -846,7 +924,7 @@ function renderAircraft3D(aircraftList, controllers) {
           outlineWidth: 2,
           outlineColor: Cesium.Color.BLACK,
           fillColor: cesiumColor,
-          pixelOffset: new Cesium.Cartesian2(0, -28)
+          pixelOffset: new Cesium.Cartesian2(0, -22)
         }
       });
       entity.icao = ac.icao;
@@ -862,39 +940,86 @@ function renderAircraft3D(aircraftList, controllers) {
       entity.label.fillColor = cesiumColor;
     }
 
-    // Linea verticale di caduta a terra (Drop Line)
-    cesiumEntities.dropLines[ac.icao] = cesiumViewer.entities.add({
-      polyline: {
-        positions: [position3D, groundPosition3D],
-        width: 1,
-        material: cesiumColor.withAlpha(0.35)
+    // 2. UPDATE O CREA LINEA DI CADUTA VERTICALE A TERRA
+    const dropPositions = [position3D, groundPosition3D];
+    if (!cesiumEntities.dropLines[ac.icao]) {
+      const dropEntity = cesiumViewer.entities.add({
+        polyline: {
+          positions: dropPositions,
+          width: 1,
+          material: cesiumColor.withAlpha(0.35)
+        }
+      });
+      dropEntity._lastColorHex = colorHex;
+      cesiumEntities.dropLines[ac.icao] = dropEntity;
+    } else {
+      const dropEntity = cesiumEntities.dropLines[ac.icao];
+      dropEntity.polyline.positions = dropPositions;
+      if (dropEntity._lastColorHex !== colorHex) {
+        if (dropEntity.polyline.material && dropEntity.polyline.material.color) {
+          dropEntity.polyline.material.color.setValue(cesiumColor.withAlpha(0.35));
+        }
+        dropEntity._lastColorHex = colorHex;
       }
-    });
+    }
 
-    // VETTORE TRATTEGGIATO 3D VERSO IL CONTROLLORE TATTICO ASSEGNATO
+    // 3. VETTORE TRATTEGGIATO 3D VERSO IL CONTROLLORE (ZERO FLICKER CON CACHE PROPRIETÀ)
     if (ac.assigned_ctrl && controllers) {
       const ctrl = controllers.find(c => String(c.id) === String(ac.assigned_ctrl));
       if (ctrl) {
         const ctrlPos3D = Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, 0);
-        cesiumEntities.assignmentLines[ac.icao] = cesiumViewer.entities.add({
-          polyline: {
-            positions: [position3D, ctrlPos3D],
-            width: isSelected ? 2.5 : 1.5,
-            material: new Cesium.PolylineDashMaterialProperty({
-              color: cesiumColor,
-              dashLength: 12.0
-            })
+        const assignPositions = [position3D, ctrlPos3D];
+        const targetWidth = isSelected ? 2.5 : 1.2;
+
+        if (!cesiumEntities.assignmentLines[ac.icao]) {
+          const assignEntity = cesiumViewer.entities.add({
+            polyline: {
+              positions: assignPositions,
+              width: targetWidth,
+              material: new Cesium.PolylineDashMaterialProperty({
+                color: cesiumColor,
+                dashLength: 12.0
+              })
+            }
+          });
+          assignEntity._lastColorHex = colorHex;
+          assignEntity._lastWidth = targetWidth;
+          cesiumEntities.assignmentLines[ac.icao] = assignEntity;
+        } else {
+          const assignEntity = cesiumEntities.assignmentLines[ac.icao];
+          
+          assignEntity.polyline.positions = assignPositions;
+
+          // Aggiorna lo spessore SOLO se effettivamente cambiato
+          if (assignEntity._lastWidth !== targetWidth) {
+            assignEntity.polyline.width = targetWidth;
+            assignEntity._lastWidth = targetWidth;
           }
-        });
+
+          // Aggiorna il colore SOLO se effettivamente cambiato
+          if (assignEntity._lastColorHex !== colorHex) {
+            if (assignEntity.polyline.material && assignEntity.polyline.material.color) {
+              assignEntity.polyline.material.color.setValue(cesiumColor);
+            }
+            assignEntity._lastColorHex = colorHex;
+          }
+        }
+      } else if (cesiumEntities.assignmentLines[ac.icao]) {
+        cesiumViewer.entities.remove(cesiumEntities.assignmentLines[ac.icao]);
+        delete cesiumEntities.assignmentLines[ac.icao];
       }
+    } else if (cesiumEntities.assignmentLines[ac.icao]) {
+      cesiumViewer.entities.remove(cesiumEntities.assignmentLines[ac.icao]);
+      delete cesiumEntities.assignmentLines[ac.icao];
     }
   });
 
-  // Rimuovi aerei inattivi da 3D
+  // PULIZIA AEREI NON PIÙ PRESENTI
   Object.keys(cesiumEntities.aircraft).forEach(icao => {
     if (!aircraftList.find(a => a.icao === icao)) {
-      cesiumViewer.entities.remove(cesiumEntities.aircraft[icao]);
-      delete cesiumEntities.aircraft[icao];
+      if (cesiumEntities.aircraft[icao]) { cesiumViewer.entities.remove(cesiumEntities.aircraft[icao]); delete cesiumEntities.aircraft[icao]; }
+      if (cesiumEntities.dropLines[icao]) { cesiumViewer.entities.remove(cesiumEntities.dropLines[icao]); delete cesiumEntities.dropLines[icao]; }
+      if (cesiumEntities.assignmentLines[icao]) { cesiumViewer.entities.remove(cesiumEntities.assignmentLines[icao]); delete cesiumEntities.assignmentLines[icao]; }
     }
   });
 }
@@ -911,18 +1036,3 @@ function updateReferenceDatum() {
 }
 
 function setRefToCurrentGPS() { fetch('/api/use_current_gps_ref', { method: 'POST' }); }
-
-// ESPOSIZIONE GLOBALE DELLE FUNZIONI PER LA MODALE GUIDA
-window.openControlsGuideModal = function() {
-  const modal = document.getElementById('modal-controls-guide');
-  if (modal) {
-    modal.style.display = 'flex';
-  }
-};
-
-window.closeControlsGuideModal = function() {
-  const modal = document.getElementById('modal-controls-guide');
-  if (modal) {
-    modal.style.display = 'none';
-  }
-};

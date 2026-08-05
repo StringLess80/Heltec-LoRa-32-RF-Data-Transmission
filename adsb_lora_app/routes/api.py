@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import time
+import uuid
 from flask import Blueprint, render_template, request, jsonify
 from core.state import system_state
 from core.config_manager import save_config_to_file
@@ -98,19 +99,35 @@ def use_current_gps_ref():
 @api_bp.route('/api/add_controller', methods=['POST'])
 def add_controller():
     data = request.json or {}
-    ctrl_id = f"CTRL_{int(time.time()*1000)}"
-    ctrl = {
-        "id": ctrl_id,
-        "name": str(data.get("name", ctrl_id)),
-        "lat": float(data.get("lat", 0.0)),
-        "lon": float(data.get("lon", 0.0)),
-        "zenith_blind_angle": float(data.get("zenith_blind_angle", 30.0)),
-        "radius_km": float(data.get("radius_km", 40.0)),
-        "active_assigned": 0
+    name = str(data.get('name', 'STINGER_UNIT_ALPHA')).strip() or 'STINGER_UNIT_ALPHA'
+    try: lat = float(data.get('lat', 45.47))
+    except (ValueError, TypeError): lat = 45.47
+    try: lon = float(data.get('lon', 9.20))
+    except (ValueError, TypeError): lon = 9.20
+    try: zenith_blind_angle = float(data.get('zenith_blind_angle', 30.0))
+    except (ValueError, TypeError): zenith_blind_angle = 30.0
+    try: radius_km = float(data.get('radius_km', 8.0))
+    except (ValueError, TypeError): radius_km = 8.0
+    try: cone_height_km = float(data.get('cone_height_km', 3.8))
+    except (ValueError, TypeError): cone_height_km = 3.8
+    try: min_range_km = float(data.get('min_range_km', 0.2))
+    except (ValueError, TypeError): min_range_km = 0.2
+
+    new_ctrl = {
+        'id': str(uuid.uuid4())[:8],
+        'name': name,
+        'lat': lat,
+        'lon': lon,
+        'unit_type': 'MANPADS_STINGER',
+        'zenith_blind_angle': zenith_blind_angle,
+        'radius_km': radius_km,
+        'cone_height_km': cone_height_km,
+        'min_range_km': min_range_km
     }
-    system_state["controllers"].append(ctrl)
+
+    system_state['controllers'].append(new_ctrl)
     save_config_to_file()
-    return jsonify({"status": "success", "controller": ctrl})
+    return jsonify({'status': 'success', 'controller': new_ctrl})
 
 @api_bp.route('/api/delete_controller', methods=['POST'])
 def delete_controller():
