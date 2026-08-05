@@ -90,22 +90,6 @@ L'aggiornamento **v4.0** trasforma la stazione di ricezione in un vero e proprio
 
 ---
 
-### 📐 Algoritmo del Cono Cieco Zenithale (Zenith Blind Cone)
-
-Un problema critico dei controllori tattici a terra è la zona d'ombra (o cieca) posizionata direttamente sopra la loro verticalità (**Zenith**).
-
-Quando un aereo entra nel cono d'ombra del controllore assegnato (angolo di elevazione rispetto all'orizzonte tale per cui l'angolo zenithale risulta $\le \theta_{zenith}$, es. $30^\circ$):
-
-1. L'aereo viene contrassegnato con l'avviso `⚠️ In Cono Verticale`.
-2. L'algoritmo calcola la distanza ortodromica Haversine e applica una **penalizzazione x10 sulla distanza**:
-   
-   $$d_{tattica} = \begin{cases} d_{reale} \cdot 10 & \text{se } \theta_{zenith} \le \theta_{soglia} \text{ (In Cono Cieco)} \\ d_{reale} & \text{altrimenti} \end{cases}$$
-
-3. La penalizzazione costringe il sistema di routing tattico a riassegnare immediatamente l'aereo al controllore adiacente ottimale.
-4. Sulla mappa 2D il cono cieco è rappresentato da un cerchio tratteggiato arancione centrato sul controllore.
-
----
-
 ### ⚡ Ottimizzazioni Prestazionali v3.0 & v4.0
 
 La versione 3.0/4.0 introduce interventi strutturali volti a garantire la massima fluidità e stabilità del sistema con flussi di traffico aereo intensi:

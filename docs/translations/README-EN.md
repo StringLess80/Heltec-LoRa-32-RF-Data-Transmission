@@ -88,22 +88,6 @@ The **v4.0** update transforms the receiver station into a full-fledged **Web Ta
 
 ---
 
-### 📐 Zenith Blind Cone Algorithm
-
-A critical operational challenge for ground tactical controllers is the coverage blind spot directly above them (**Zenith**).
-
-When an aircraft enters the blind cone of an assigned controller (elevation angle relative to the horizon such that the zenith angle is $\le \theta_{zenith}$, e.g., $30^\circ$):
-
-1. The aircraft is flagged with the warning `⚠️ In Blind Cone`.
-2. The algorithm calculates the Haversine orthodromic distance and applies a **10x distance penalty**:
-
-   $$d_{tactical} = \begin{cases} d_{real} \cdot 10 & \text{if } \theta_{zenith} \le \theta_{threshold} \text{ (In Blind Cone)} \\ d_{real} & \text{otherwise} \end{cases}$$
-
-3. The penalty forces the tactical routing engine to immediately reassign the aircraft to the optimal adjacent controller.
-4. On the 2D map, the blind cone is visualized as an orange dashed circle centered on the controller.
-
----
-
 ### ⚡ Performance Optimizations v3.0 & v4.0
 
 Versions 3.0 and 4.0 introduce key structural optimizations to ensure maximum system fluidity and stability under dense air traffic flows:
