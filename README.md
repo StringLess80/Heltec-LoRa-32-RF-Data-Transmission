@@ -86,7 +86,7 @@ L'aggiornamento **v4.0** trasforma la stazione di ricezione in un vero e proprio
 * **Integrazione GPS Seriale NMEA 0183:** Modulo di decodifica nativo per GPS seriale (`$GPGGA`, `$GPRMC`, `$GPGLL`) con rendering sulla mappa di un marker verde fluorescente ad effetto `radar pulse` animato coordinate della stazione.
 * **Gestione Controllori Tattici a Terra:** Aggiunta e rimozione istantanea di controllori sulla mappa con aggiornamento dinamico delle assegnazioni del traffico aereo e diffing JSON sul DOM.
 * **RF Engine Graph:** Grafico vettoriale SVG integrato che mostra la frequenza di pacchetti al secondo ricevuti via LoRa con effetto neon verde.
-* **Persistenza e Scrittura Atomica:** La configurazione di sistema (`config.json`) viene salvata con percorso assoluto e `os.fsync()` per forzare la scrittura fisica su disco. Rigenerazione automatica in caso di file mancante.
+* **Persistenza e Scrittura:** La configurazione di sistema (`config.json`) viene salvata con percorso assoluto e `os.fsync()` per forzare la scrittura fisica su disco. Rigenerazione automatica in caso di file mancante.
 
 ---
 

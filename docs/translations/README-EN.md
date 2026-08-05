@@ -84,7 +84,7 @@ The **v4.0** update transforms the receiver station into a full-fledged **Web Ta
 * **NMEA 0183 Serial GPS Integration:** Native decoding module for serial GPS (`$GPGGA`, `$GPRMC`, `$GPGLL`) displaying a bright fluorescent green marker with an animated radar pulse effect at the station's coordinates.
 * **Ground Tactical Controller Management:** Instant addition and removal of controllers on the map with dynamic updating of air traffic assignments and JSON diffing on the DOM.
 * **RF Engine Graph:** Integrated SVG vector graph displaying real-time received LoRa packet frequency per second with a green neon styling.
-* **Persistence and Atomic Writes:** System configuration (`config.json`) is saved using absolute paths and `os.fsync()` to force physical disk writes. Automatic configuration file regeneration if missing.
+* **Persistence:** System configuration (`config.json`) is saved using absolute paths and `os.fsync()` to force physical disk writes. Automatic configuration file regeneration if missing.
 
 ---
 
