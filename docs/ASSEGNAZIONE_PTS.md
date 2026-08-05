@@ -138,5 +138,3 @@ $$Score_j = d_{slant,j} \cdot w_{cpa} \cdot w_{blind}$$
 1. **Filtro Rigido Inviluppo**: Se $d_{slant} > 8,0\text{ km}$ oppure $\Delta h > 3,8\text{ km}$, l'aereo è **`OUT_OF_RANGE`** e il punteggio è $\infty$ (Assegnazione = `None`).
 2. **Priorità Minaccia In Avvicinamento**: Se $CPA \le 2,0\text{ km}$, il peso $w_{cpa} = 0,7$ (Riduce lo score per dare priorità d'ingaggio).
 3. **Penalizzazione Cono Cieco**: Se $\theta_{zenith} \le 30^\circ$, il peso $w_{blind} = 10,0$. La penalizzazione x10 moltiplica la distanza apparente, **costringendo l'algoritmo a passare l'assegnazione (*handoff*) all'unità Stinger adiacente ottimale**.
-
-> **[INSERISCI QUI SCREENSHOT 4: TARGET INSPECTOR CON DETTAGLI TARGET SELEZIONATO VIOLA]**
