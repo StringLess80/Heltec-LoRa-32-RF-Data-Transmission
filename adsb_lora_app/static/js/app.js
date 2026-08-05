@@ -1,5 +1,20 @@
+// INITIALIZATION MAPPA 2D LEAFLET
 const map = L.map('map-viewport', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19, opacity: 0.65 }).addTo(map);
+
+// VARS STATO E MAPPE CON PERSISTENZA LOCALSTORAGE
+let currentMapMode = localStorage.getItem('tactical_map_mode') || '2D';
+let cesiumViewer = null;
+
+// Entità Cesium 3D
+let cesiumEntities = {
+  aircraft: {},
+  controllers: {},
+  blindCones: {},
+  dropLines: {},
+  assignmentLines: {},
+  gpsMarker: null
+};
 
 let aircraftMarkers = {};
 let controllerMarkers = {};
@@ -14,14 +29,279 @@ let hasAutoCenteredInit = false;
 let hasCenteredOnGPSFirstFix = false;
 let isTimeoutInputLoaded = false;
 
-// PER EVITARE LA RICOSTRUZIONE DEL DOM A OGNI WEBSOCKET TICK
 let lastControllersJson = "";
-
 let chartHistory = new Array(20).fill(0);
 
 const socket = io();
 
 map.on('click', () => { deselectAircraft(); });
+
+// APPLICA MODALITÀ SALVATA ALL'AVVIO
+document.addEventListener('DOMContentLoaded', () => {
+  if (currentMapMode === '3D') {
+    switchMapMode('3D');
+  }
+});
+
+// APERTURA / CHIUSURA MODALE GUIDA COMANDI
+function openControlsGuideModal() {
+  document.getElementById('modal-controls-guide').style.display = 'flex';
+}
+function closeControlsGuideModal() {
+  document.getElementById('modal-controls-guide').style.display = 'none';
+}
+
+// SWITCH MODALITÀ 2D / 3D CON PARTE INIZIALE DALL'ALTO (-90°)
+async function switchMapMode(mode) {
+  currentMapMode = mode;
+  localStorage.setItem('tactical_map_mode', mode);
+
+  const btn2d = document.getElementById('btn-mode-2d');
+  const btn3d = document.getElementById('btn-mode-3d');
+  const map2dDiv = document.getElementById('map-viewport');
+  const map3dDiv = document.getElementById('cesium-viewport');
+
+  if (mode === '3D') {
+    if (btn2d) btn2d.classList.remove('active');
+    if (btn3d) btn3d.classList.add('active');
+    map2dDiv.style.display = 'none';
+    map3dDiv.style.display = 'block';
+
+    if (!cesiumViewer) {
+      await initCesium3DGlobe();
+    } else {
+      cesiumViewer.resize();
+    }
+
+    lastControllersJson = ""; 
+    renderControllers(localControllers);
+    renderAircraft(latestAircraftList, localControllers);
+
+    let centerLat = 45.4642;
+    let centerLon = 9.1901;
+
+    const inpLat = parseFloat(document.getElementById('input-ref-lat')?.value);
+    const inpLon = parseFloat(document.getElementById('input-ref-lon')?.value);
+    if (!isNaN(inpLat) && !isNaN(inpLon)) {
+      centerLat = inpLat;
+      centerLon = inpLon;
+    }
+
+    if (cesiumViewer) {
+      // VISTA PERPENDICOLARE DALL'ALTO (PITCH -90)
+      cesiumViewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, 35000.0),
+        orientation: {
+          heading: Cesium.Math.toRadians(0.0),
+          pitch: Cesium.Math.toRadians(-90.0), // Dall'alto
+          roll: 0.0
+        },
+        duration: 1.2
+      });
+    }
+
+  } else {
+    if (btn3d) btn3d.classList.remove('active');
+    if (btn2d) btn2d.classList.add('active');
+    map3dDiv.style.display = 'none';
+    map2dDiv.style.display = 'block';
+    
+    map.invalidateSize();
+    renderAircraft(latestAircraftList, localControllers);
+  }
+}
+
+// FUNZIONE RECENTER DALL'ALTO (-90°)
+function snapCameraToLocation() {
+  let targetLat = null;
+  let targetLon = null;
+
+  if (latestSystemState?.gps?.connected && latestSystemState?.gps?.lat && latestSystemState?.gps?.lon) {
+    targetLat = latestSystemState.gps.lat;
+    targetLon = latestSystemState.gps.lon;
+  } else {
+    const inpLat = parseFloat(document.getElementById('input-ref-lat')?.value);
+    const inpLon = parseFloat(document.getElementById('input-ref-lon')?.value);
+    if (!isNaN(inpLat) && !isNaN(inpLon) && (inpLat !== 0 || inpLon !== 0)) {
+      targetLat = inpLat;
+      targetLon = inpLon;
+    }
+  }
+
+  if (!targetLat && localControllers && localControllers.length > 0) {
+    targetLat = localControllers[0].lat;
+    targetLon = localControllers[0].lon;
+  }
+
+  if (!targetLat) {
+    targetLat = 45.4642;
+    targetLon = 9.1901;
+  }
+
+  if (currentMapMode === '2D') {
+    map.flyTo([targetLat, targetLon], 13, { duration: 1.2 });
+  } else if (cesiumViewer) {
+    cesiumViewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(targetLon, targetLat, 25000.0),
+      orientation: {
+        heading: Cesium.Math.toRadians(0.0),
+        pitch: Cesium.Math.toRadians(-90.0), // Perpendicolare dall'alto
+        roll: 0.0
+      },
+      duration: 1.2
+    });
+  }
+}
+
+// Variabile globale per stato di sistema
+let latestSystemState = {};
+
+// INIZIALIZZAZIONE GLOBO 3D CON BLOCCO DI FISICA SUB-TERRENO
+async function initCesium3DGlobe() {
+  Cesium.Ion.defaultAccessToken = '';
+
+  cesiumViewer = new Cesium.Viewer('cesium-viewport', {
+    imageryProvider: false,
+    baseLayerPicker: false,
+    geocoder: false,
+    homeButton: false,
+    infoBox: false,
+    sceneModePicker: false,
+    selectionIndicator: false,
+    timeline: false,
+    animation: false,
+    navigationHelpButton: false,
+    fullscreenButton: false,
+    skyAtmosphere: false
+  });
+
+  // CONTROLLI FISICI TELECAMERA (Impedisce di finire sotto terra o sottosopra)
+  const controller = cesiumViewer.scene.screenSpaceCameraController;
+  controller.minimumZoomDistance = 500.0;        // Quota minima di sicurezza 500 metri dal suolo
+  controller.enableCollisionDetection = true;    // Attiva la collisione rigida con la terra
+  controller.minimumPitchAmount = Cesium.Math.toRadians(-88.0); // Impedisce alla telecamera di capovolgersi
+  controller.maximumPitchAmount = Cesium.Math.toRadians(-5.0);
+
+  try {
+    const topoBaseProvider = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
+      'https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer'
+    );
+    cesiumViewer.imageryLayers.addImageryProvider(topoBaseProvider);
+
+    const labelsOverlayProvider = await Cesium.UrlTemplateImageryProvider.fromUrl(
+      'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png'
+    );
+    cesiumViewer.imageryLayers.addImageryProvider(labelsOverlayProvider);
+
+  } catch (err) {
+    console.error("Errore caricamento layer mappe 3D:", err);
+  }
+
+  cesiumViewer.scene.globe.enableLighting = false;
+  cesiumViewer.scene.globe.showGroundAtmosphere = false;
+
+  setTimeout(() => {
+    if (cesiumViewer) cesiumViewer.resize();
+  }, 150);
+
+  const handler = new Cesium.ScreenSpaceEventHandler(cesiumViewer.scene.canvas);
+  handler.setInputAction((click) => {
+    const pickedObject = cesiumViewer.scene.pick(click.position);
+    if (Cesium.defined(pickedObject) && pickedObject.id && pickedObject.id.icao) {
+      const ac = latestAircraftList.find(a => a.icao === pickedObject.id.icao);
+      if (ac) selectAircraft(ac);
+    } else {
+      deselectAircraft();
+    }
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+}
+
+// Salva lo stato di sistema nella callback websocket
+socket.on('telemetry_update', (data) => {
+  latestSystemState = data.system || {};
+  // ... resto del codice websocket esistente ...
+});
+
+// RENDER CONTROLLORI TATTICI E CONI ZENITH 3D
+function renderControllers(controllers) {
+  const container = document.getElementById('controllers-container');
+  if (!container) return;
+
+  const currentJson = JSON.stringify((controllers || []).map(c => `${c.id}_${c.name}_${c.zenith_blind_angle}_${c.radius_km}`));
+  if (currentJson === lastControllersJson) return;
+  lastControllersJson = currentJson;
+
+  container.innerHTML = '';
+
+  if (!controllers || controllers.length === 0) {
+    container.innerHTML = '<div style="font-size: 12px; color: var(--text-sub); text-align: center; padding: 10px;">Nessun controllore presente. Clicca <b>+ Add</b>.</div>';
+    return;
+  }
+
+  controllers.forEach(ctrl => {
+    const zenithAngle = ctrl.zenith_blind_angle || 30;
+    container.innerHTML += `
+      <div class="glass-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+          <div style="font-weight: 600; font-size: 14px;">${ctrl.name}</div>
+          <button onclick="event.stopPropagation(); deleteController('${ctrl.id}')" style="border:none; background:none; color:var(--accent-red); cursor:pointer; font-weight:700; padding:4px 8px; font-size:16px; pointer-events:auto;" title="Elimina Controllore">✕</button>
+        </div>
+        <div class="data-row"><span class="data-label">Cono Zenith</span><span class="data-value">± ${zenithAngle}°</span></div>
+        <div class="data-row"><span class="data-label">Raggio Op.</span><span class="data-value">${ctrl.radius_km} km</span></div>
+      </div>
+    `;
+
+    // 2D LEAFLET RENDER
+    if (!controllerMarkers[ctrl.id]) {
+      controllerMarkers[ctrl.id] = L.circleMarker([ctrl.lat, ctrl.lon], { color: '#007aff', fillColor: '#007aff', fillOpacity: 0.9, radius: 8 }).addTo(map).bindTooltip(ctrl.name, { permanent: true, direction: 'top' });
+    } else {
+      controllerMarkers[ctrl.id].setLatLng([ctrl.lat, ctrl.lon]);
+    }
+
+    const radiusGroundMeters = 3000.0 * Math.tan(zenithAngle * Math.PI / 180.0);
+    if (blindConeCircles[ctrl.id]) map.removeLayer(blindConeCircles[ctrl.id]);
+    blindConeCircles[ctrl.id] = L.circle([ctrl.lat, ctrl.lon], { radius: radiusGroundMeters, color: '#ff9500', fillColor: '#ff9500', fillOpacity: 0.15, weight: 1.5, dashArray: '3, 3' }).addTo(map);
+
+    // 3D CESIUM RENDER (TORRI E CONI ZENITH 3D)
+    if (cesiumViewer) {
+      if (!cesiumEntities.controllers[ctrl.id]) {
+        cesiumEntities.controllers[ctrl.id] = cesiumViewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, 0),
+          point: { pixelSize: 12, color: Cesium.Color.fromCssColorString('#007aff'), outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
+          label: {
+            text: `🏰 ${ctrl.name}`,
+            font: 'bold 12px sans-serif',
+            fillColor: Cesium.Color.fromCssColorString('#007aff'),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: new Cesium.Cartesian2(0, -20)
+          }
+        });
+      } else {
+        cesiumEntities.controllers[ctrl.id].position = Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, 0);
+      }
+
+      // Cono Cieco Zenith 3D invertito (altezza fino a 12km)
+      const coneHeightMeters = 20000.0;
+      const topRadiusMeters = coneHeightMeters * Math.tan(zenithAngle * Math.PI / 180.0);
+
+      if (cesiumEntities.blindCones[ctrl.id]) cesiumViewer.entities.remove(cesiumEntities.blindCones[ctrl.id]);
+      
+      cesiumEntities.blindCones[ctrl.id] = cesiumViewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, coneHeightMeters / 2.0),
+        cylinder: {
+          length: coneHeightMeters,
+          topRadius: topRadiusMeters,
+          bottomRadius: 0.0,
+          material: Cesium.Color.fromCssColorString('#ff9500').withAlpha(0.25),
+          outline: true,
+          outlineColor: Cesium.Color.fromCssColorString('#ff9500').withAlpha(0.7)
+        }
+      });
+    }
+  });
+}
 
 function deselectAircraft() {
   currentSelectedIcao = null;
@@ -37,6 +317,8 @@ function deselectAircraft() {
     }
   });
   renderAircraftFeed(latestAircraftList);
+  
+  if (currentMapMode === '3D') renderAircraft3D(latestAircraftList, localControllers);
 }
 
 function selectAircraft(ac) {
@@ -65,9 +347,26 @@ function selectAircraft(ac) {
 
   const lat = parseFloat(ac.current_data[14]);
   const lon = parseFloat(ac.current_data[15]);
-  if (lat && lon) { map.panTo([lat, lon]); }
+  const altMeters = parseFloat(alt) * 0.3048;
+
+  if (lat && lon) {
+    if (currentMapMode === '2D') {
+      map.panTo([lat, lon]);
+    } else if (cesiumViewer) {
+      cesiumViewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat - 0.05, Math.max(altMeters + 5000, 8000)),
+        orientation: {
+          heading: Cesium.Math.toRadians(0.0),
+          pitch: Cesium.Math.toRadians(-30.0),
+          roll: 0.0
+        },
+        duration: 1.2
+      });
+    }
+  }
 
   renderAircraftFeed(latestAircraftList);
+  if (currentMapMode === '3D') renderAircraft3D(latestAircraftList, localControllers);
 }
 
 function toggleRadioChart() {
@@ -138,6 +437,7 @@ function fetchCleanSerialPorts() {
 
 fetchCleanSerialPorts();
 
+// WEBSOCKET RECEIVER TELEMETRIA
 socket.on('telemetry_update', (data) => {
   const sys = data.system || {};
   const aircraft = data.aircraft || [];
@@ -221,6 +521,7 @@ socket.on('telemetry_update', (data) => {
 
   localControllers = sys.controllers || [];
   renderControllers(localControllers);
+  
   renderAircraft(aircraft, localControllers);
   renderAircraftFeed(aircraft);
 });
@@ -277,6 +578,7 @@ function selectAircraftByIcao(icao) {
 function renderGPSMarker(gps) {
   if (!gps.connected || !gps.lat || !gps.lon) {
     if (gpsMarker) { map.removeLayer(gpsMarker); gpsMarker = null; }
+    if (cesiumEntities.gpsMarker && cesiumViewer) { cesiumViewer.entities.remove(cesiumEntities.gpsMarker); cesiumEntities.gpsMarker = null; }
     return;
   }
 
@@ -301,6 +603,18 @@ function renderGPSMarker(gps) {
   } else {
     gpsMarker.setLatLng([gps.lat, gps.lon]);
     gpsMarker.setIcon(customGpsIcon);
+  }
+
+  if (cesiumViewer) {
+    if (!cesiumEntities.gpsMarker) {
+      cesiumEntities.gpsMarker = cesiumViewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(gps.lon, gps.lat, 0),
+        point: { pixelSize: 12, color: Cesium.Color.fromCssColorString('#34c759'), outlineColor: Cesium.Color.WHITE, outlineWidth: 2 },
+        label: { text: '📍 GPS STN LOCALE', font: '12px sans-serif', fillColor: Cesium.Color.fromCssColorString('#34c759'), pixelOffset: new Cesium.Cartesian2(0, -20) }
+      });
+    } else {
+      cesiumEntities.gpsMarker.position = Cesium.Cartesian3.fromDegrees(gps.lon, gps.lat, 0);
+    }
   }
 }
 
@@ -343,7 +657,6 @@ function submitAddController() {
   const zenith_blind_angle = parseFloat(document.getElementById('m-ctrl-zenith').value);
   const radius_km = parseFloat(document.getElementById('m-ctrl-radius').value);
 
-  // Reset dello stato del render per forzare l'aggiornamento
   lastControllersJson = "";
 
   fetch('/api/add_controller', {
@@ -353,14 +666,18 @@ function submitAddController() {
   }).then(r => r.json()).then(d => closeAddControllerModal());
 }
 
-// CANCELLAZIONE REALE E ISTANTANEA AL PRIMO CLICK
 function deleteController(id) {
-  lastControllersJson = ""; // Forzo il ridisegno immediato del DOM
+  lastControllersJson = "";
   localControllers = localControllers.filter(c => String(c.id) !== String(id));
   
   if (controllerMarkers[id]) { map.removeLayer(controllerMarkers[id]); delete controllerMarkers[id]; }
   if (blindConeCircles[id]) { map.removeLayer(blindConeCircles[id]); delete blindConeCircles[id]; }
   
+  if (cesiumViewer) {
+    if (cesiumEntities.controllers[id]) { cesiumViewer.entities.remove(cesiumEntities.controllers[id]); delete cesiumEntities.controllers[id]; }
+    if (cesiumEntities.blindCones[id]) { cesiumViewer.entities.remove(cesiumEntities.blindCones[id]); delete cesiumEntities.blindCones[id]; }
+  }
+
   renderControllers(localControllers);
 
   fetch('/api/delete_controller', {
@@ -370,58 +687,16 @@ function deleteController(id) {
   });
 }
 
-// RENDER CONTROLLORI OTTIMIZZATO (SENZA DISTRUZIONE DOM SE LA LISTA NON CAMBIA)
-function renderControllers(controllers) {
-  const container = document.getElementById('controllers-container');
-  if (!container) return;
-
-  // Se la lista è identica a prima, NON ricreare i pulsanti e NON toccare il DOM
-  const currentJson = JSON.stringify((controllers || []).map(c => `${c.id}_${c.name}_${c.zenith_blind_angle}_${c.radius_km}`));
-  if (currentJson === lastControllersJson) {
-    return;
+function renderAircraft(aircraftList, controllers) {
+  if (currentMapMode === '2D') {
+    renderAircraft2D(aircraftList, controllers);
+  } else {
+    renderAircraft3D(aircraftList, controllers);
   }
-  lastControllersJson = currentJson;
-
-  container.innerHTML = '';
-
-  if (!controllers || controllers.length === 0) {
-    container.innerHTML = '<div style="font-size: 12px; color: var(--text-sub); text-align: center; padding: 10px;">Nessun controllore presente. Clicca <b>+ Add</b>.</div>';
-    return;
-  }
-
-  controllers.forEach(ctrl => {
-    const zenithAngle = ctrl.zenith_blind_angle || 30;
-    container.innerHTML += `
-      <div class="glass-card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
-          <div style="font-weight: 600; font-size: 14px;">${ctrl.name}</div>
-          <button onclick="event.stopPropagation(); deleteController('${ctrl.id}')" style="border:none; background:none; color:var(--accent-red); cursor:pointer; font-weight:700; padding:4px 8px; font-size:16px; pointer-events:auto;" title="Elimina Controllore">✕</button>
-        </div>
-        <div class="data-row"><span class="data-label">Cono Zenith</span><span class="data-value">± ${zenithAngle}°</span></div>
-        <div class="data-row"><span class="data-label">Raggio Op.</span><span class="data-value">${ctrl.radius_km} km</span></div>
-      </div>
-    `;
-
-    if (!controllerMarkers[ctrl.id]) {
-      controllerMarkers[ctrl.id] = L.circleMarker([ctrl.lat, ctrl.lon], { color: '#007aff', fillColor: '#007aff', fillOpacity: 0.9, radius: 8 }).addTo(map).bindTooltip(ctrl.name, { permanent: true, direction: 'top' });
-    } else {
-      controllerMarkers[ctrl.id].setLatLng([ctrl.lat, ctrl.lon]);
-    }
-
-    const radiusGroundMeters = 3000.0 * Math.tan(zenithAngle * Math.PI / 180.0);
-    if (blindConeCircles[ctrl.id]) map.removeLayer(blindConeCircles[ctrl.id]);
-    blindConeCircles[ctrl.id] = L.circle([ctrl.lat, ctrl.lon], { radius: radiusGroundMeters, color: '#ff9500', fillColor: '#ff9500', fillOpacity: 0.15, weight: 1.5, dashArray: '3, 3' }).addTo(map);
-  });
-
-  Object.keys(controllerMarkers).forEach(cid => {
-    if (!controllers.find(c => String(c.id) === String(cid))) {
-      map.removeLayer(controllerMarkers[cid]); delete controllerMarkers[cid];
-      if (blindConeCircles[cid]) { map.removeLayer(blindConeCircles[cid]); delete blindConeCircles[cid]; }
-    }
-  });
 }
 
-function renderAircraft(aircraftList, controllers) {
+// RENDER AEREI MAPPA 2D
+function renderAircraft2D(aircraftList, controllers) {
   assignmentLines.forEach(l => map.removeLayer(l));
   assignmentLines = [];
 
@@ -516,6 +791,114 @@ function renderAircraft(aircraftList, controllers) {
   });
 }
 
+// RENDER AEREI 3D CON MODELLINO LOW-POLY, ROTAZIONE HEADING E VETTORE TRATTEGGIATO
+function renderAircraft3D(aircraftList, controllers) {
+  if (!cesiumViewer) return;
+
+  // Pulizia vettori e drop lines dinamiche
+  Object.keys(cesiumEntities.dropLines).forEach(k => { cesiumViewer.entities.remove(cesiumEntities.dropLines[k]); });
+  Object.keys(cesiumEntities.assignmentLines).forEach(k => { cesiumViewer.entities.remove(cesiumEntities.assignmentLines[k]); });
+  cesiumEntities.dropLines = {};
+  cesiumEntities.assignmentLines = {};
+
+  aircraftList.forEach(ac => {
+    const lat = parseFloat(ac.current_data[14]);
+    const lon = parseFloat(ac.current_data[15]);
+    const altFeet = parseFloat(ac.current_data[11] || 0);
+    const heading = parseFloat(ac.current_data[13] || 0);
+    const altMeters = altFeet * 0.3048; // Piedi -> Metri MSL
+    if (!lat || !lon) return;
+
+    const callsign = ac.current_data[10] || ac.icao;
+    const isBlind = ac.in_blind_cone;
+    const isSelected = ac.icao === currentSelectedIcao;
+
+    // Colore Dinamico: Blu (#007aff), Arancione (#ff9500 in cono), Viola Neon (#af52de se selezionato)
+    let colorHex = isBlind ? '#ff9500' : '#007aff';
+    if (isSelected) colorHex = '#af52de';
+    const cesiumColor = Cesium.Color.fromCssColorString(colorHex);
+
+    const position3D = Cesium.Cartesian3.fromDegrees(lon, lat, altMeters);
+    const groundPosition3D = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+
+    // CALCOLO ORIENTAMENTO 3D HEADING (Rotazione della prua dell'aereo)
+    const headingRad = Cesium.Math.toRadians(heading);
+    const hpr = new Cesium.HeadingPitchRoll(headingRad, 0, 0);
+    const orientation = Cesium.Transforms.headingPitchRollQuaternion(position3D, hpr);
+
+    // MODELLINO AERO 3D LOW-POLY
+    if (!cesiumEntities.aircraft[ac.icao]) {
+      const entity = cesiumViewer.entities.add({
+        position: position3D,
+        orientation: orientation,
+        model: {
+          uri: '/static/assets/11803_Airplane_v1_l1.glb', // Modello 3D convertito
+          minimumPixelSize: 32,
+          maximumScale: 400,
+          color: cesiumColor,
+          colorBlendMode: Cesium.ColorBlendMode.MIX,
+          colorBlendAmount: 0.75
+        },
+        label: {
+          text: `${callsign}\n${altFeet} ft`,
+          font: 'bold 11px sans-serif',
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          outlineWidth: 2,
+          outlineColor: Cesium.Color.BLACK,
+          fillColor: cesiumColor,
+          pixelOffset: new Cesium.Cartesian2(0, -28)
+        }
+      });
+      entity.icao = ac.icao;
+      cesiumEntities.aircraft[ac.icao] = entity;
+    } else {
+      const entity = cesiumEntities.aircraft[ac.icao];
+      entity.position = position3D;
+      entity.orientation = orientation;
+      if (entity.model) {
+        entity.model.color = cesiumColor;
+      }
+      entity.label.text = `${callsign}\n${altFeet} ft`;
+      entity.label.fillColor = cesiumColor;
+    }
+
+    // Linea verticale di caduta a terra (Drop Line)
+    cesiumEntities.dropLines[ac.icao] = cesiumViewer.entities.add({
+      polyline: {
+        positions: [position3D, groundPosition3D],
+        width: 1,
+        material: cesiumColor.withAlpha(0.35)
+      }
+    });
+
+    // VETTORE TRATTEGGIATO 3D VERSO IL CONTROLLORE TATTICO ASSEGNATO
+    if (ac.assigned_ctrl && controllers) {
+      const ctrl = controllers.find(c => String(c.id) === String(ac.assigned_ctrl));
+      if (ctrl) {
+        const ctrlPos3D = Cesium.Cartesian3.fromDegrees(ctrl.lon, ctrl.lat, 0);
+        cesiumEntities.assignmentLines[ac.icao] = cesiumViewer.entities.add({
+          polyline: {
+            positions: [position3D, ctrlPos3D],
+            width: isSelected ? 2.5 : 1.5,
+            material: new Cesium.PolylineDashMaterialProperty({
+              color: cesiumColor,
+              dashLength: 12.0
+            })
+          }
+        });
+      }
+    }
+  });
+
+  // Rimuovi aerei inattivi da 3D
+  Object.keys(cesiumEntities.aircraft).forEach(icao => {
+    if (!aircraftList.find(a => a.icao === icao)) {
+      cesiumViewer.entities.remove(cesiumEntities.aircraft[icao]);
+      delete cesiumEntities.aircraft[icao];
+    }
+  });
+}
+
 function updateReferenceDatum() {
   const name = document.getElementById('input-ref-name').value;
   const lat = parseFloat(document.getElementById('input-ref-lat').value);
@@ -528,3 +911,18 @@ function updateReferenceDatum() {
 }
 
 function setRefToCurrentGPS() { fetch('/api/use_current_gps_ref', { method: 'POST' }); }
+
+// ESPOSIZIONE GLOBALE DELLE FUNZIONI PER LA MODALE GUIDA
+window.openControlsGuideModal = function() {
+  const modal = document.getElementById('modal-controls-guide');
+  if (modal) {
+    modal.style.display = 'flex';
+  }
+};
+
+window.closeControlsGuideModal = function() {
+  const modal = document.getElementById('modal-controls-guide');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+};

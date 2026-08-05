@@ -5,20 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ADS-B over LoRa — Tactical Control Center</title>
   
+  <!-- Leaflet 2D -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- COLLEGAMENTO AL CSS SEPARATO -->
+  
+  <!-- CesiumJS 3D Globe -->
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  
+  <!-- Style CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 <body>
 
   <div class="ambient-layer"></div>
+  
+  <!-- CONTENITORI MAPPA 2D & GLOBO 3D -->
   <div id="map-viewport"></div>
+  <div id="cesium-viewport" style="display: none;"></div>
 
   <div class="app-container">
     
     <!-- Top Bar -->
     <header class="liquid-sheet top-bar interactive">
-      <div style="font-weight:600; font-size:15px;">📡 ADS-B over LoRa | Tactical Station</div>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <div style="font-weight:600; font-size:15px;">📡 ADS-B over LoRa | Tactical Station</div>
+        
+        <!-- SELETTORE MODALITÀ MAPPA 2D / 3D -->
+        <div class="view-mode-toggle">
+          <button id="btn-mode-2d" class="mode-btn active" onclick="switchMapMode('2D')">2D Map</button>
+          <button id="btn-mode-3d" class="mode-btn" onclick="switchMapMode('3D')">3D Globe</button>
+        </div>
+      </div>
 
       <div class="status-group">
         <div class="status-badge"><div id="dot-dump1090" class="status-dot"></div><span id="txt-dump1090">dump1090</span></div>
@@ -83,6 +99,120 @@
     </aside>
 
     <div style="grid-column: 2;"></div>
+
+<!-- STACK PULSANTI FLOATING ANGOLO IN BASSO A DESTRA (CON ICONE SVG VETTORIALI) -->
+  <div class="floating-btn-stack interactive">
+    <!-- Pulsante Guida Comandi -->
+    <button class="liquid-sheet floating-map-btn interactive" onclick="window.openControlsGuideModal()" title="Guida Comandi & Tasti Navigazione">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-main)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="4" width="20" height="16" rx="3" ry="3"></rect>
+        <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8"></path>
+      </svg>
+    </button>
+
+    <!-- Pulsante Ricentra Target -->
+    <button class="liquid-sheet floating-map-btn interactive" onclick="snapCameraToLocation()" title="Ricentra Mappa su GPS / Torre">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="8"></circle>
+        <line x1="12" y1="2" x2="12" y2="6"></line>
+        <line x1="12" y1="18" x2="12" y2="22"></line>
+        <line x1="2" y1="12" x2="6" y2="12"></line>
+        <line x1="18" y1="12" x2="22" y2="12"></line>
+        <circle cx="12" cy="12" r="2" fill="var(--accent-blue)"></circle>
+      </svg>
+    </button>
+  </div>
+
+  <!-- MODALE GUIDA COMANDI CON ICONE SVG E BADGES TATTICI -->
+  <div id="modal-controls-guide" class="modal-overlay">
+    <div class="liquid-sheet modal-card" style="width: 450px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div style="font-weight:700; font-size:16px; display:flex; align-items:center; gap:8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-main)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3" ry="3"></rect><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8"></path></svg>
+          Guida Comandi & Navigazione
+        </div>
+        <button onclick="window.closeControlsGuideModal()" style="border:none; background:none; color:var(--text-sub); cursor:pointer; font-weight:700; font-size:18px;">✕</button>
+      </div>
+      
+      <!-- Sezione 2D -->
+      <div class="glass-card">
+        <div style="font-weight:700; font-size:12px; color:var(--accent-blue); margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+          MAPPA 2D
+        </div>
+        <div class="data-row">
+          <span class="data-label">Spostamento</span>
+          <span class="data-value">
+            <kbd>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><path d="M12 2A7 7 0 0 0 5 9v6a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7z"></path><path d="M12 2v7H5" fill="var(--accent-blue)" fill-opacity="0.6"></path></svg>
+              Drag Left
+            </kbd>
+          </span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Zoom In / Out</span>
+          <span class="data-value">
+            <kbd>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><path d="M12 2A7 7 0 0 0 5 9v6a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7z"></path><rect x="11" y="5" width="2" height="4" rx="1" fill="var(--text-main)"></rect></svg>
+              Scroll Wheel
+            </kbd>
+          </span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Selezione Target</span>
+          <span class="data-value">
+            <kbd>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><path d="M12 2A7 7 0 0 0 5 9v6a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7z"></path><path d="M12 2v7H5" fill="var(--accent-blue)" fill-opacity="0.6"></path></svg>
+              Click Left
+            </kbd>
+          </span>
+        </div>
+      </div>
+
+      <!-- Sezione 3D -->
+      <div class="glass-card">
+        <div style="font-weight:700; font-size:12px; color:var(--accent-purple); margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+          GLOBO 3D
+        </div>
+        <div class="data-row">
+          <span class="data-label">Panoramica</span>
+          <span class="data-value">
+            <kbd>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><path d="M12 2A7 7 0 0 0 5 9v6a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7z"></path><path d="M12 2v7H5" fill="var(--accent-blue)" fill-opacity="0.6"></path></svg>
+              Drag Left
+            </kbd>
+          </span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Zoom Fluido</span>
+          <span class="data-value">
+            <kbd>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><path d="M12 2A7 7 0 0 0 5 9v6a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7z"></path><path d="M12 2v7h7" fill="var(--accent-purple)" fill-opacity="0.6"></path></svg>
+              Drag Right
+            </kbd> 
+            <span style="font-size:10px; color:var(--text-sub);">o</span> 
+            <kbd>Scroll</kbd>
+          </span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Inclinazione 3D / Rotazione</span>
+          <span class="data-value">
+            <kbd>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:3px;"><path d="M12 2A7 7 0 0 0 5 9v6a7 7 0 0 0 14 0V9a7 7 0 0 0-7-7z"></path><rect x="11" y="5" width="2" height="4" rx="1" fill="var(--accent-orange)"></rect></svg>
+              Drag Middle
+            </kbd> 
+            <span style="font-size:10px; color:var(--text-sub);">o</span> 
+            <kbd>CTRL</kbd> + <kbd>Drag Left</kbd>
+          </span>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+        <button class="btn-action" style="background:var(--accent-blue); color:white; border:none;" onclick="window.closeControlsGuideModal()">Capito!</button>
+      </div>
+    </div>
+  </div>
 
     <!-- Sidebar Right -->
     <aside class="liquid-sheet sidebar-right interactive">
@@ -198,10 +328,12 @@
     </div>
   </div>
 
+  <!-- LIBRERIE JAVASCRIPT -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.115/Build/Cesium/Cesium.js"></script>
   <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
   
-  <!-- COLLEGAMENTO AL JS SEPARATO -->
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
 </body>
 </html>

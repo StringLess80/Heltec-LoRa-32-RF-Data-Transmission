@@ -6,20 +6,20 @@
     },
     "controllers": [
         {
-            "id": "CTRL_1785883840394",
-            "name": "AAA",
-            "lat": 44.473,
-            "lon": 11.382,
-            "zenith_blind_angle": 20.0,
-            "radius_km": 200.0,
+            "id": "CTRL_1785923235847",
+            "name": "TEST",
+            "lat": 44.48111,
+            "lon": 11.378,
+            "zenith_blind_angle": 40.0,
+            "radius_km": 100.0,
             "active_assigned": 0
         }
     ],
     "aircraft_timeout_sec": 30,
     "gps_serial_status": {
-        "connected": true,
-        "port": "/dev/ttyUSB0",
-        "baud": 4800
+        "connected": false,
+        "port": "Nessuna",
+        "baud": 9600
     },
     "heltec_serial_status": {
         "connected": false,
