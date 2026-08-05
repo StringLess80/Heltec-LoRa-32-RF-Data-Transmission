@@ -1,0 +1,29 @@
+{
+    "reference_datum": {
+        "name": "POINT_ALPHA",
+        "lat": 44.47279833333333,
+        "lon": 11.382861666666667
+    },
+    "controllers": [
+        {
+            "id": "CTRL_1785883840394",
+            "name": "AAA",
+            "lat": 44.473,
+            "lon": 11.382,
+            "zenith_blind_angle": 20.0,
+            "radius_km": 200.0,
+            "active_assigned": 0
+        }
+    ],
+    "aircraft_timeout_sec": 30,
+    "gps_serial_status": {
+        "connected": true,
+        "port": "/dev/ttyUSB0",
+        "baud": 4800
+    },
+    "heltec_serial_status": {
+        "connected": false,
+        "port": "Nessuna",
+        "baud": 115200
+    }
+}

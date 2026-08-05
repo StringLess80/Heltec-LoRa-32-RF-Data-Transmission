@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADS-B over LoRa — Tactical Control Center</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- COLLEGAMENTO AL CSS SEPARATO -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+  <div class="ambient-layer"></div>
+  <div id="map-viewport"></div>
+
+  <div class="app-container">
+    
+    <!-- Top Bar -->
+    <header class="liquid-sheet top-bar interactive">
+      <div style="font-weight:600; font-size:15px;">📡 ADS-B over LoRa | Tactical Station</div>
+
+      <div class="status-group">
+        <div class="status-badge"><div id="dot-dump1090" class="status-dot"></div><span id="txt-dump1090">dump1090</span></div>
+        <div class="status-badge clickable" onclick="openHeltecModal()"><div id="dot-serial" class="status-dot"></div><span id="txt-serial">Heltec ⚙️</span></div>
+        <div class="status-badge clickable" onclick="openGPSModal()"><div id="dot-gps" class="status-dot"></div><span id="txt-gps">GPS ⚙️</span></div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span id="lbl-utc" style="font-family: var(--font-mono); font-size: 13px; font-weight: 600;">--:--:-- UTC</span>
+        <button id="btn-tx-toggle" class="tx-btn" onclick="toggleTX()">
+          <span id="dot-tx-status" class="tx-dot"></span>
+          <span id="txt-tx-status">TX TRANSMITTER OFF</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Sidebar Left -->
+    <aside class="liquid-sheet sidebar-left interactive">
+      <div>
+        <div class="section-title">Parametri Telemetria & Timeout</div>
+        <div class="glass-card">
+          <div class="data-row">
+            <span class="data-label">Timeout Inattività</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <input id="input-ac-timeout" class="glass-input" type="number" min="5" max="600" value="60" style="width:75px;" oninput="updateAircraftTimeout()">
+              <span style="font-size:11px; font-weight:600;">sec</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Telemetry GPS (Local Node)</div>
+        <div class="glass-card">
+          <div class="data-row"><span class="data-label">Latitude</span><span id="val-gps-lat" class="data-value">0.0000°</span></div>
+          <div class="data-row"><span class="data-label">Longitude</span><span id="val-gps-lon" class="data-value">0.0000°</span></div>
+          <div class="data-row"><span class="data-label">Altitude MSL</span><span id="val-gps-alt" class="data-value">0 m</span></div>
+          <div class="data-row"><span class="data-label">Satelliti</span><span id="val-gps-sats" class="data-value">0</span></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Reference Datum (Punto Noto)</div>
+        <div class="glass-card">
+          <div class="data-row"><span class="data-label">Nome</span><input id="input-ref-name" class="glass-input" value="POINT_ALPHA"></div>
+          <div class="data-row"><span class="data-label">Latitudine</span><input id="input-ref-lat" class="glass-input" value="45.4642"></div>
+          <div class="data-row"><span class="data-label">Longitudine</span><input id="input-ref-lon" class="glass-input" value="9.1901"></div>
+          <div style="display:flex; gap: 8px; margin-top: 10px;">
+            <button class="btn-action" style="flex:1;" onclick="updateReferenceDatum()">Salva Datum</button>
+            <button class="btn-action" style="flex:1;" onclick="setRefToCurrentGPS()">Da GPS</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div class="section-title" style="margin-bottom:0;">Controllori Traffico</div>
+          <button class="btn-action" style="padding: 4px 10px; font-size: 11px;" onclick="openAddControllerModal()">+ Add</button>
+        </div>
+        <div id="controllers-container"></div>
+      </div>
+    </aside>
+
+    <div style="grid-column: 2;"></div>
+
+    <!-- Sidebar Right -->
+    <aside class="liquid-sheet sidebar-right interactive">
+      <div>
+        <div class="section-title">Target Inspector Focus</div>
+        <div id="target-focus-card" class="glass-card" style="background: rgba(255, 255, 255, 0.45);">
+          <div style="text-align: center; color: var(--text-sub); font-size: 13px; padding: 12px 0;">
+            Seleziona un aereo sulla mappa o dal feed
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Feed Aerei Visibili (<span id="ac-count">0</span>)</div>
+        <div id="aircraft-feed-container" style="max-height: 220px; overflow-y: auto;">
+          <div style="font-size: 12px; color: var(--text-sub); text-align: center; padding: 12px;">Nessun aereo rilevato</div>
+        </div>
+      </div>
+
+      <div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div class="section-title" style="margin-bottom:0;">LoRa RF Transmission Engine</div>
+          <button id="btn-toggle-chart" onclick="toggleRadioChart()" style="background:none; border:none; color:var(--text-sub); cursor:pointer; font-size:13px; font-weight:bold; padding:2px 6px;" title="Mostra/Nascondi Grafico RF">▼</button>
+        </div>
+        
+        <div class="glass-card">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div>
+              <div class="data-label" style="font-size: 11px;">PACKETS / SEC</div>
+              <div id="val-rf-pps" class="metric-hero">0.0</div>
+            </div>
+            <div>
+              <div class="data-label" style="font-size: 11px;">AIRTIME UTIL.</div>
+              <div id="val-rf-airtime" class="metric-hero" style="color: var(--accent-green);">0.0%</div>
+            </div>
+          </div>
+          <div class="data-row"><span class="data-label">Payload Bitrate</span><span id="val-rf-bitrate" class="data-value">0.00 KB/s</span></div>
+
+          <div id="radio-chart-container" style="display: none; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.06);">
+            <div style="font-size: 10px; color: var(--text-sub); font-weight: 700; margin-bottom: 6px; letter-spacing:0.5px;">PACKETS / SEC REALTIME STREAM</div>
+            <svg id="rf-chart-svg" width="100%" height="60" viewBox="0 0 300 60" preserveAspectRatio="none" style="overflow: visible;">
+              <defs>
+                <linearGradient id="neon-grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#34c759" stop-opacity="0.38" />
+                  <stop offset="100%" stop-color="#34c759" stop-opacity="0.0" />
+                </linearGradient>
+                <filter id="neon-glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="2" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              <line x1="0" y1="55" x2="300" y2="55" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+              <line x1="0" y1="5" x2="300" y2="5" stroke="rgba(0,0,0,0.04)" stroke-width="1" stroke-dasharray="2,2"/>
+              <polygon id="chart-area" points="0,55 300,55" fill="url(#neon-grad)" />
+              <polyline id="chart-line" points="0,55 300,55" fill="none" stroke="#34c759" stroke-width="2.2" filter="url(#neon-glow)" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </div>
+
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- MODALS -->
+  <div id="modal-gps" class="modal-overlay">
+    <div class="liquid-sheet modal-card">
+      <div style="font-weight:700; font-size:16px; margin-bottom:14px;">Configurazione GPS Seriale</div>
+      <div class="glass-card">
+        <div class="data-row"><span class="data-label">Porta Seriale</span><select id="select-gps-port" class="glass-select"></select></div>
+        <div class="data-row"><span class="data-label">Baud Rate</span><select id="select-gps-baud" class="glass-select"><option value="9600">9600</option><option value="4800">4800</option><option value="115200">115200</option></select></div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
+        <button class="btn-action" onclick="closeGPSModal()">Chiudi</button>
+        <button class="btn-action" style="color:var(--accent-red);" onclick="disconnectGPS()">Stacca</button>
+        <button class="btn-action" style="background:var(--accent-green); color:white; border:none;" onclick="connectGPS()">Connetti</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-heltec" class="modal-overlay">
+    <div class="liquid-sheet modal-card">
+      <div style="font-weight:700; font-size:16px; margin-bottom:14px;">Configurazione Scheda Heltec LoRa</div>
+      <div class="glass-card">
+        <div class="data-row"><span class="data-label">Porta Seriale</span><select id="select-heltec-port" class="glass-select"></select></div>
+        <div class="data-row"><span class="data-label">Baud Rate</span><select id="select-heltec-baud" class="glass-select"><option value="115200">115200</option><option value="57600">57600</option></select></div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
+        <button class="btn-action" onclick="closeHeltecModal()">Chiudi</button>
+        <button class="btn-action" style="color:var(--accent-red);" onclick="disconnectHeltec()">Stacca</button>
+        <button class="btn-action" style="background:var(--accent-blue); color:white; border:none;" onclick="connectHeltec()">Connetti</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-add-controller" class="modal-overlay">
+    <div class="liquid-sheet modal-card">
+      <div style="font-weight:700; font-size:16px; margin-bottom:14px;">Nuovo Controllore Tattico</div>
+      <div class="glass-card">
+        <div class="data-row"><span class="data-label">Nome Client</span><input id="m-ctrl-name" class="glass-input" value="CTRL_TOWER_NORTH"></div>
+        <div class="data-row"><span class="data-label">Latitudine</span><input id="m-ctrl-lat" class="glass-input" value="45.4700"></div>
+        <div class="data-row"><span class="data-label">Longitudine</span><input id="m-ctrl-lon" class="glass-input" value="9.2000"></div>
+        <div class="data-row"><span class="data-label">Cono Zenith (gradi)</span><input id="m-ctrl-zenith" class="glass-input" value="30"></div>
+        <div class="data-row"><span class="data-label">Raggio Op. (km)</span><input id="m-ctrl-radius" class="glass-input" value="40"></div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
+        <button class="btn-action" onclick="closeAddControllerModal()">Annulla</button>
+        <button class="btn-action" style="background:var(--accent-blue); color:white; border:none;" onclick="submitAddController()">Aggiungi</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  
+  <!-- COLLEGAMENTO AL JS SEPARATO -->
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

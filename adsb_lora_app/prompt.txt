@@ -1,0 +1,94 @@
+Ecco un **Prompt Master completo, strutturato e dettagliato**. 
+
+Ti basterà copiarlo e incollarlo all'inizio di una nuova chat in futuro: darà all'IA tutto il contesto tecnico, le specifiche dell'hardware, gli algoritmi applicati, le scelte di design e la struttura dei file, permettendoti di riprendere lo sviluppo da dove siamo arrivati senza perdere nessun dettaglio.
+
+---
+
+### 📋 COPIA E INCOLLA IL PROMPT SOTTOSTANTE NELLA NUOVA CHAT:
+
+```markdown
+Sei un esperto sviluppatore Full-Stack Python e Ingegnere di Sistemi embedded/RF.
+Stiamo lavorando al progetto "ADS-B over LoRa — Tactical Control Center", una Web App avanzata in Python/Flask per il monitoraggio e la ritrasmissione semantica compressa del traffico aereo ADS-B via radio LoRa (SX1262 su scheda Heltec V3).
+
+Di seguito trovi la panoramica tecnica completa, l'architettura dei file, il protocollo binario e gli algoritmi applicati finora per poter riprendere lo sviluppo da dove ci siamo interrotti.
+
+---
+
+### 📡 PANORAMICA DEL PROGETTO E ARCHITETTURA
+L'applicazione riceve dati SBS-1 in tempo reale da Dump1090 (TCP 127.0.0.1:30003), gestisce un database in memoria degli aerei visibili (`aircraft_db`), calcola l'assegnazione tattica del traffico verso dei Controllori a terra, applica un filtraggio semantico differenziale (Delta/Full/Event) e comprime i dati in pacchetti binari con checksum CRC32. Quando la trasmissione è attiva, i pacchetti vengono inviati su porta seriale a una scheda Heltec LoRa V3 (115200 baud) per la diffusione via radio. I dati vengono inoltre inviati in tempo reale via WebSockets (Flask-SocketIO) a una Dashboard cartografica.
+
+#### Struttura Modulare dei File:
+```text
+adsb_lora_app/
+├── app.py                  # Entrypoint Flask & SocketIO (async_mode='threading')
+├── config.json             # Configurazione persistente (salvata con percorso assoluto e os.fsync)
+├── core/
+│   ├── state.py            # Dizionario dello stato di sistema in memoria (system_state, aircraft_db)
+│   ├── config_manager.py   # Salvataggio/Caricamento config.json con rigenerazione automatica se assente
+│   └── math_tactical.py    # Geodesia Haversine e calcolo Cono Cieco Zenith
+├── protocol/
+│   ├── nmea_parser.py      # Decoder NMEA 0183 ($GPGGA, $GPRMC, $GPGLL) per GPS Seriale
+│   └── lora_encoder.py     # Codificatore binario semantico ADS-B (Header 0xAA55 + Bitmask + Payload + CRC16)
+├── services/
+│   ├── serial_service.py   # Gestione porte seriali reali (Heltec DTR/RTS fix + GPS)
+│   └── adsb_service.py     # Worker Dump1090, timeout inattività e Loop TX LoRa
+├── routes/
+│   └── api.py              # Tutti gli endpoint REST API (/api/...)
+├── static/
+│   ├── css/style.css       # Foglio di stile Liquid Glass UI (Glassmorphism Apple-style)
+│   └── js/app.js          # Cartografia Leaflet.js, WebSockets, Modali ed Eventi
+└── templates/
+    └── index.html          # HTML pulito con collegamento a file statici
+```
+
+---
+
+### 🛠️ SPECIFICHE TECNICHE E ALGORITMI CHIAVE
+
+1. **Protocollo Radio Binario ADS-B over LoRa**:
+   - **Header**: 7 Byte (`SYNC 0xAA55` [uint16], `seq` [uint16], `mask` [uint16], `payload_len` [uint8]).
+   - **Bitmask & Campi (Ordinati tassativamente per bit)**:
+     - Bit 0: `ICAO` (4 Byte - uint32 hex)
+     - Bit 1: `Callsign` (8 Byte - ASCII string con padding `\x00`)
+     - Bit 2: `Altitudine` (2 Byte - uint16)
+     - Bit 3: `Velocità` (2 Byte - uint16)
+     - Bit 4: `Direzione/Heading` (2 Byte - uint16)
+     - Bit 5: `Latitudine` (4 Byte - int32 $deg \times 10^7$)
+     - Bit 6: `Longitudine` (4 Byte - int32 $deg \times 10^7$)
+     - Bit 7: `Vertical Rate` (2 Byte - int16)
+   - **Footer**: Checksum CRC32 (2 Byte lower uint16) applicato a Header + Payload.
+
+2. **Algoritmo Cono Cieco Verticale (Zenith Blind Cone)**:
+   - I controllori tattici a terra hanno una zona d'ombra direttamente sopra la loro testa (Zenith).
+   - Se l'angolo di elevazione dell'aereo rispetto all'orizzonte dà un angolo Zenith $\le \theta_{zenith}$ (es. $30^\circ$), l'aereo viene marcato come `⚠️ In Cono Verticale`.
+   - L'algoritmo applica una **penalizzazione x10 sulla distanza** in modo da riassegnare l'aereo al controllore adiacente ottimale.
+   - Sulla mappa 2D il cono cieco a terra è rappresentato da un cerchio tratteggiato arancione centrato sul controllore.
+
+3. **Integrazione Hardware Seriale**:
+   - **Porte Seriali Reali**: Il sistema filtra ed esclude le porte virtuali di sistema Linux (es. `/dev/ttyS0..31`).
+   - **Heltec V3 LoRa**: Apertura seriale con segnali DTR/RTS gestiti (`dtr=True`, `rts=False`) per evitare che l'ESP32 rimanga in reset USB-CDC.
+   - **GPS Seriale**: Parser NMEA 0183 nativo che decodifica coordinate `DDMM.MMMM`, Satelliti, Fix e ora UTC.
+   - **Marker GPS Mappa**: Sulla mappa compare un marker verde fluorescente con effetto radar `pulse` animato nelle coordinate del GPS locale.
+
+4. **Persistenza & Timeout Inattività Aerei**:
+   - `config.json` viene salvato con percorso assoluto e `os.fsync()` per forzare la Scrittura fisica su disco. Se eliminato, viene automaticamente rigenerato all'avvio.
+   - Timeout inattività aerei regolabile dall'UI in secondi (es. 60s): gli aerei inattivi spariscono automaticamente da mappa, feed e memoria.
+
+---
+
+### 🎨 INTERFACCIA GRAFICA (LIQUID GLASS UI) E MAPPA LEAFLET
+
+- **Design System**: Materiale vetro traslucido (Glassmorphism), sfondi sfumati, bordi brillanti, palette Apple (Blu `#007aff`, Verde `#34c759`, Arancione `#ff9500`, Viola `#af52de`).
+- **Gestione Marker Aerei (Performance 60fps)**: I marker Leaflet non vengono mai distrutti e ricreati ad ogni tick WebSocket per non rompere la cliccabilità. L'icona SVG ruota in tempo reale in base all'Heading (`DIR`).
+- **Selezioni & Mappa**:
+  - Clic su aereo -> Diventa **Viola Neon (`#af52de`)** con bagliore, apre l'Inspector e disegna la linea vettoriale verso il controllore.
+  - Clic su punto vuoto della mappa -> Deseleziona l'aereo.
+  - Centramento automatico iniziale sul GPS reale o sul Punto Noto.
+- **Top Bar Navbar**: Badges dinamici per Dump1090, Heltec e GPS. Cliccando su Heltec o GPS si aprono le modali per scegliere la porta seriale reale e il Baud Rate.
+- **Pulsante TX**: Cambia colore all'istante tra **Rosso (DISATTIVO)** e **Verde Neon (ATTIVO)**.
+- **RF Engine & Grafico**: Grafico vettoriale SVG della frequenza pacchetti/sec con effetto verde neon, normalmente nascosto e togglabile tramite freccetta `▼`.
+- **Controllori Tattici**: Aggiunta tramite Modale e cancellazione istantanea con tasto `✕` (con algoritmo di diffing JSON sul DOM per evitare flickers).
+
+---
+
+Siamo pronti per proseguire. Rispondi confermando di aver assimilato l'architettura e chiedimi quale nuova funzionalità vogliamo aggiungere o modificare!
